@@ -1,0 +1,295 @@
+id: dog_boy
+name: "Dog Boy (Psi-Hound)"
+description: "Coalition States genetically engineered mutant canine psychic tracker. Born to hunt the supernatural."
+
+attributes:
+  iq: 10
+  me: 11
+  ma: 9
+  ps: 12
+  pp: 12
+  pe: 13
+  pb: 7
+  spd_bipedal: 22
+  spd_quadruped: 40
+
+base_hp: 13  # = PE
+base_sdc: 40
+base_isp: 21  # ME(11) + 10
+base_ppe: 18
+
+combat:
+  base_apm: 4
+  initiative_bonus: 2
+  strike_bonus: 0
+  parry_bonus: 2
+  dodge_bonus: 2
+  roll_with_impact_bonus: 0
+  damage_bonus: 0
+
+innate_abilities:
+  - id: sense_psychic_energy
+    name: "Sense Psychic & Magic Energy"
+    description: "Detect psychics/magic users (25+ PPE) within 50ft; active psionic/magic use within 500ft; supernatural creatures from 1000ft"
+    isp_cost: 0
+    range_base_ft: 50
+    range_per_level_ft: 5
+    passive: true
+
+  - id: recognize_psychic_scent
+    name: "Recognize Psychic Scent"
+    description: "Identify specific individuals and creature types by their unique psychic scent"
+    isp_cost: 0
+    passive: true
+
+  - id: super_smell
+    name: "Super Smell"
+    description: "Track scents up to 4 days old, identify individuals by scent, smell underground"
+    isp_cost: 0
+    passive: true
+
+  - id: keen_senses
+    name: "Keen Hearing & Sight"
+    description: "+2 perception, +2 initiative. Wide hearing range including ultrasonic."
+    isp_cost: 0
+    passive: true
+    bonuses:
+      perception: 2
+      initiative: 2
+
+  - id: four_legged_sprint
+    name: "Four-Legged Sprint"
+    description: "Drop to all fours for ~80% speed boost but cannot use hands/weapons"
+    isp_cost: 0
+    passive: false
+
+  - id: ley_line_interference
+    name: "Ley Line Interference"
+    description: "Psychic sensing ceases near ley lines and active gates"
+    isp_cost: 0
+    passive: true
+
+starting_psionic_powers:
+  - id: sixth_sense
+    name: "Sixth Sense"
+    isp_cost: 2
+    description: "Precognitive warning of danger within 90ft/60sec. +6 initiative, +3 dodge, +2 parry, cannot be surprised for 1 round."
+    duration: "1 melee round"
+    automatic: true
+
+  - id: empathy
+    name: "Empathy"
+    isp_cost: 4
+    description: "Sense emotions of one target within 100ft. Duration 2min/level. Target saves vs psionics to resist."
+    range_ft: 100
+    duration_per_level: "2 minutes"
+    save: "vs_psionics"
+
+  - id: see_aura
+    name: "See Aura"
+    isp_cost: 6
+    description: "Read target's aura: experience level, magic/psionics presence, health, possession, disposition."
+    duration: "1 melee round"
+
+unlockable_psionic_powers:
+  - id: sense_evil
+    name: "Sense Evil"
+    isp_cost: 2
+    unlock_level: 3
+    range_ft: 140
+    duration_per_level: "2 minutes"
+
+  - id: sense_magic
+    name: "Sense Magic"
+    isp_cost: 3
+    unlock_level: 3
+    range_ft: 120
+
+  - id: telepathy
+    name: "Telepathy"
+    isp_cost: 4
+    unlock_level: 6
+    range_ft: 60
+    duration_per_level: "2 minutes"
+    save: "vs_psionics"
+
+  - id: mind_block
+    name: "Mind Block"
+    isp_cost: 4
+    unlock_level: 6
+    duration_per_level: "10 minutes"
+
+  - id: see_invisible
+    name: "See the Invisible"
+    isp_cost: 4
+    unlock_level: 9
+    duration_per_level: "1 minute"
+
+  - id: presence_sense
+    name: "Presence Sense"
+    isp_cost: 4
+    unlock_level: 9
+    range_ft: 30
+
+  - id: clairvoyance
+    name: "Clairvoyance"
+    isp_cost: 4
+    unlock_level: 12
+
+  - id: read_dimensional_portal
+    name: "Read Dimensional Portal"
+    isp_cost: 6
+    unlock_level: 3
+
+  - id: total_recall
+    name: "Total Recall"
+    isp_cost: 2
+    unlock_level: 6
+
+  - id: sense_time
+    name: "Sense Time"
+    isp_cost: 2
+    unlock_level: 3
+
+skills:
+  - hand_to_hand_basic
+  - wp_energy_rifle
+  - wp_knife
+  - tracking
+  - wilderness_survival
+  - first_aid
+  - land_navigation
+  - detect_ambush
+  - intelligence
+  - prowl
+  - swim
+  - climb
+
+starting_gear:
+  - id: ca3_armor
+    name: "CA-3 Light Dead Boy Armor"
+    type: armor
+    mdc: 70
+    description: "Full environmental protection"
+
+  - id: cp40_rifle
+    name: "CP-40 Pulse Laser Rifle"
+    type: weapon_ranged
+    damage: "2d6"
+    damage_type: md
+    range_ft: 360
+    ammo_per_clip: 30
+    description: "Standard Coalition pulse laser"
+
+  - id: vibro_knife
+    name: "Vibro-Knife"
+    type: weapon_melee
+    damage_active: "1d6"
+    damage_active_type: md
+    damage_inactive: "1d6"
+    damage_inactive_type: sdc
+
+  - id: canteen
+    name: "Canteen"
+    type: consumable
+    weight: 2
+
+  - id: field_rations
+    name: "Field Rations (3 days)"
+    type: consumable
+    uses: 9
+    weight: 3
+
+  - id: medkit
+    name: "Basic Medkit"
+    type: consumable
+    uses: 3
+    weight: 2
+
+  - id: backpack
+    name: "Backpack"
+    type: container
+    weight: 2
+
+  - id: e_clip_1
+    name: "E-Clip"
+    type: ammo
+    charges: 30
+    weight: 1
+
+  - id: e_clip_2
+    name: "E-Clip"
+    type: ammo
+    charges: 30
+    weight: 1
+
+unique_actions:
+  - id: pack_howl
+    name: "Pack Howl"
+    description: "Rally the party -- all Dog Boys get +2 to all rolls for 1 round"
+    uses_per_rest: 1
+    effect:
+      bonus: 2
+      duration_rounds: 1
+      target: party
+
+  - id: guard_ally
+    name: "Guard Ally"
+    description: "Intercept one attack targeting an adjacent ally this round"
+    action_cost: 1
+    range: adjacent
+
+  - id: psi_track
+    name: "Psi-Track"
+    description: "Follow psychic scent trail to locate a creature or gate"
+    modes: [conversation, travel]
+
+progression:
+  hp_per_level: "1d6"
+  isp_per_level: "1d6"
+  level_table:
+    1: { xp: 0 }
+    2: { xp: 2000, bonuses: "+2 parry/dodge" }
+    3: { xp: 4000, bonuses: "+1 dodge, +1 APM", new_power: true }
+    4: { xp: 8000, bonuses: "+1 WP" }
+    5: { xp: 16000, bonuses: "+1 strike, Pack Leader ability" }
+    6: { xp: 24000, new_power: true }
+    7: { xp: 34000 }
+    8: { xp: 50000, bonuses: "+1 WP, body flip/throw" }
+    9: { xp: 70000, bonuses: "+1 APM", new_power: true }
+    10: { xp: 95000, bonuses: "+2 roll with impact" }
+    11: { xp: 130000 }
+    12: { xp: 180000, bonuses: "+1 strike", new_power: true }
+    13: { xp: 240000 }
+    14: { xp: 310000 }
+    15: { xp: 400000, bonuses: "+1 APM" }
+  max_level: 15
+
+personality_presets:
+  - id: aggressive_loyal
+    name: "Aggressive / Loyal"
+    temperament: brave
+    combat_preference: aggressive
+    speech_style: terse
+    quirks: ["always first to charge", "protective of pack"]
+
+  - id: cautious_analytical
+    name: "Cautious / Analytical"
+    temperament: cautious
+    combat_preference: defensive
+    speech_style: formal
+    quirks: ["comments on tactical positions", "distrusts magic"]
+
+  - id: reckless_cheerful
+    name: "Reckless / Cheerful"
+    temperament: brave
+    combat_preference: aggressive
+    speech_style: slang
+    quirks: ["makes jokes mid-combat", "always hungry"]
+
+  - id: quiet_watchful
+    name: "Quiet / Watchful"
+    temperament: cautious
+    combat_preference: support
+    speech_style: terse
+    quirks: ["rarely speaks unless spoken to", "notices everything"]
