@@ -12,15 +12,26 @@ const MIN_SIDEBAR = 220;
 const MAX_SIDEBAR = 600;
 const DEFAULT_SIDEBAR = 300;
 
+const MIN_TACTICAL_H = 160;
+const MAX_TACTICAL_H = 720;
+const DEFAULT_TACTICAL_H = 360;
+
 export function GameLayout() {
   const { state, actions } = useGame();
   const mode = state.session?.current_mode || 'conversation';
   const modeColor = MODE_COLORS[mode] || MODE_COLORS.conversation;
 
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
+  const [tacticalHeight, setTacticalHeight] = useState(DEFAULT_TACTICAL_H);
+
   const dragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(DEFAULT_SIDEBAR);
+
+  // vertical drag state for tactical/chat split
+  const vDragging = useRef(false);
+  const startY = useRef(0);
+  const startH = useRef(DEFAULT_TACTICAL_H);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     dragging.current = true;
@@ -45,6 +56,31 @@ export function GameLayout() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }, [sidebarWidth]);
+
+  const onVMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    vDragging.current = true;
+    startY.current = e.clientY;
+    startH.current = tacticalHeight;
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent) => {
+      if (!vDragging.current) return;
+      const delta = ev.clientY - startY.current;
+      const next = Math.max(MIN_TACTICAL_H, Math.min(MAX_TACTICAL_H, startH.current + delta));
+      setTacticalHeight(next);
+    };
+    const onUp = () => {
+      vDragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [tacticalHeight]);
 
   return (
     <div className="game-layout" style={{ '--mode-color': modeColor } as React.CSSProperties}>
@@ -100,7 +136,16 @@ export function GameLayout() {
 
       <div className="game-content">
         <div className={`main-panel ${mode === 'tactical' ? 'with-tactical' : ''}`}>
-          {mode === 'tactical' && <TacticalBoard />}
+          {mode === 'tactical' && (
+            <>
+              <TacticalBoard height={tacticalHeight} />
+              <div
+                className="tactical-chat-resize-handle"
+                onMouseDown={onVMouseDown}
+                title="Drag to resize"
+              />
+            </>
+          )}
           <ChatPanel />
         </div>
 
@@ -112,7 +157,7 @@ export function GameLayout() {
         </div>
       </div>
 
-      {state.role !== 'spectator' && <ContextActionBar />}
+      {/* ContextActionBar hidden — actions handled via chat and tactical grid */}
     </div>
   );
 }

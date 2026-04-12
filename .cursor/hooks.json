@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": ".cursor/hooks/ensure-dev.sh",
+        "timeout": 20
+      }
+    ]
+  }
+}

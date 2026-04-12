@@ -40,21 +40,27 @@ export function MapPanel() {
   const prevMode   = useRef(mode);
   const prevPos    = useRef<Map<string, [number, number]>>(new Map());
 
-  // Init map once
+  // Init map once — guarded against React StrictMode double-invoke via cancelled flag
   useEffect(() => {
-    if (collapsed || !mapRef.current || mapObj.current) return;
+    if (collapsed) return;
+
+    let cancelled = false;
+
+    // If already initialized (e.g. from a previous non-cancelled run), skip
+    if (mapObj.current) return;
 
     import('leaflet').then(leaflet => {
+      if (cancelled || mapObj.current || !mapRef.current) return;
+
       L = leaflet;
       delete (L.Icon.Default.prototype as any)._getIconUrl;
       L.Icon.Default.mergeOptions({ iconRetinaUrl: '', iconUrl: '', shadowUrl: '' });
 
-      const map = L.map(mapRef.current!, {
+      const map = L.map(mapRef.current, {
         center: [LEADVILLE_LAT, LEADVILLE_LNG],
         zoom: zoomForMode(mode),
         zoomControl: true,
         attributionControl: true,
-        // Read-only: disable interactions that could confuse users
         scrollWheelZoom: true,
         doubleClickZoom: false,
       });
@@ -79,6 +85,7 @@ export function MapPanel() {
     });
 
     return () => {
+      cancelled = true;
       if (mapObj.current) {
         mapObj.current.remove();
         mapObj.current = null;
@@ -117,9 +124,25 @@ export function MapPanel() {
       if (!ids.has(id)) { map.removeLayer(m); existing.delete(id); }
     }
 
+    // Count how many combatants share each grid cell so we can offset markers
+    const cellCount = new Map<string, number>();
+    const cellIdx   = new Map<string, number>();
+    for (const c of state.party) {
+      const k = `${c.tactical_x ?? 0},${c.tactical_y ?? 0}`;
+      cellIdx.set(c.id, cellCount.get(k) ?? 0);
+      cellCount.set(k, (cellCount.get(k) ?? 0) + 1);
+    }
+
     let moved: [number, number] | null = null;
     for (const c of state.party) {
-      const [lat, lng] = gridToLatLng(c.tactical_x ?? 0, c.tactical_y ?? 0);
+      const stackSize = cellCount.get(`${c.tactical_x ?? 0},${c.tactical_y ?? 0}`) ?? 1;
+      const idx       = cellIdx.get(c.id) ?? 0;
+      // Spread stacked markers by ~15m (~0.00015 deg) in a circle
+      const angle  = stackSize > 1 ? (idx / stackSize) * Math.PI * 2 : 0;
+      const spread = stackSize > 1 ? 0.00015 : 0;
+      const [baseLat, baseLng] = gridToLatLng(c.tactical_x ?? 0, c.tactical_y ?? 0);
+      const lat = baseLat + Math.sin(angle) * spread;
+      const lng = baseLng + Math.cos(angle) * spread;
       const color = partyColor(c);
       const label = initials(c.name);
       const v = c.vitals;

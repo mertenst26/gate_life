@@ -94,6 +94,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
   }
 }
 
+const STORAGE_KEY_CHAR = 'gate_life_my_character_id';
+
 const initialState: GameState = {
   userId: 'player-1',
   role: 'player',
@@ -101,7 +103,7 @@ const initialState: GameState = {
   session: null,
   party: [],
   messages: [],
-  myCharacterId: null,
+  myCharacterId: sessionStorage.getItem(STORAGE_KEY_CHAR) ?? null,
   connected: false,
   gmThinking: false,
 };
@@ -130,6 +132,22 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     dispatch({ type: 'SET_CONNECTED', payload: ws.connected });
   }, [ws.connected]);
+
+  // Persist character ID so it survives Vite HMR and server restarts
+  useEffect(() => {
+    if (state.myCharacterId) {
+      sessionStorage.setItem(STORAGE_KEY_CHAR, state.myCharacterId);
+    }
+  }, [state.myCharacterId]);
+
+  // When character ID is set (or reconnected), tell the server our combatant ID
+  // without triggering a full session_state response that would clobber turn_state
+  useEffect(() => {
+    if (ws.connected && state.myCharacterId) {
+      console.log('[GameContext] registering combatantId on server:', state.myCharacterId);
+      ws.send({ type: 'register_combatant', payload: { combatant_id: state.myCharacterId } });
+    }
+  }, [state.myCharacterId, ws.connected]);
 
   // WebSocket message handlers
   useEffect(() => {
@@ -218,17 +236,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [state.session, state.myCharacterId]);
 
   const endTurn = useCallback(() => {
-    if (!state.session || !state.myCharacterId) return;
+    console.log('[endTurn] called. session=', state.session?.id, 'myCharacterId=', state.myCharacterId, 'wsConnected=', ws.connected);
+    if (!state.session) { console.log('[endTurn] blocked: no session'); return; }
+    if (!state.myCharacterId) { console.log('[endTurn] blocked: no myCharacterId'); return; }
     ws.send({ type: 'end_turn', payload: {} });
-  }, [state.session, state.myCharacterId, ws.send]);
+    console.log('[endTurn] sent end_turn WS message');
+  }, [state.session, state.myCharacterId, ws.connected, ws.send]);
 
   const sendTacticalMove = useCallback((targetX: number, targetY: number) => {
-    ws.send({ type: 'tactical_move', payload: { target_x: targetX, target_y: targetY } });
-  }, [ws.send]);
+    console.log(`[sendTacticalMove] (${targetX},${targetY}) wsConnected=${ws.connected}`);
+    ws.send({ type: 'tactical_move', payload: { target_x: targetX, target_y: targetY, combatant_id: state.myCharacterId } });
+  }, [ws.send, ws.connected, state.myCharacterId]);
 
   const changeMode = useCallback(async (mode: string) => {
     if (!state.session) return;
-    await api.changeGameMode(state.session.id, mode);
+    const result = await api.changeGameMode(state.session.id, mode);
+    // Apply directly from REST response — don't rely solely on WS broadcast
+    if (result?.mode) dispatch({ type: 'SET_MODE', payload: result.mode as any });
+    if (result?.turn_state !== undefined) dispatch({ type: 'SET_TURN_STATE', payload: result.turn_state as any });
   }, [state.session]);
 
   const spawnAgent = useCallback(async (name: string, preset?: string) => {

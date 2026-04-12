@@ -308,7 +308,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .main-panel.with-tactical {
-  flex-direction: row;
+  flex-direction: column;
 }
 
 .sidebar-resize-handle {
@@ -1261,12 +1261,39 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* ── Tactical Board ── */
+.tactical-chat-resize-handle {
+  height: 6px;
+  cursor: row-resize;
+  background: var(--border-color);
+  flex-shrink: 0;
+  position: relative;
+  transition: background 0.15s;
+}
+.tactical-chat-resize-handle:hover,
+.tactical-chat-resize-handle:active {
+  background: var(--accent-color, #4a9eff);
+}
+.tactical-chat-resize-handle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.25);
+}
+
 .tactical-board {
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: none;
   overflow: hidden;
+  /* Default height — overridden by inline style when resizing */
+  height: 360px;
+  flex-shrink: 0;
 }
 
 .tactical-board-header {

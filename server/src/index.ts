@@ -10,6 +10,7 @@ import { combatantRoutes } from './routes/combatants.js';
 import { messageRoutes } from './routes/messages.js';
 import { actionRoutes } from './routes/actions.js';
 import { stateRoutes } from './routes/state.js';
+import { terrainRoutes } from './routes/terrain.js';
 import { wsHandler } from './ws/handler.js';
 import { loadTemplates } from './services/ClassTemplateService.js';
 
@@ -32,6 +33,7 @@ async function main() {
   app.register(messageRoutes, { prefix: '/api/messages' });
   app.register(actionRoutes, { prefix: '/api/actions' });
   app.register(stateRoutes, { prefix: '/api/state' });
+  app.register(terrainRoutes, { prefix: '/api/terrain' });
 
   // WebSocket
   app.register(wsHandler);

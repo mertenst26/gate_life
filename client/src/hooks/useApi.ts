@@ -39,10 +39,8 @@ export function useApi() {
 // Direct API functions (no hook, for use in callbacks)
 export const api = {
   getCampaigns: () => fetchJson<unknown[]>('/campaigns'),
-  createCampaign: (data: { name: string; gm_kind: string; gm_user_id?: string; gm_agent_config?: { tone: string; difficulty: string; narrative_style: string; setting?: string } }) =>
+  createCampaign: (data: { name: string; gm_kind: string; gm_user_id?: string }) =>
     fetchJson<unknown>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
-  startNarration: (campaignId: string, sessionId: string) =>
-    fetchJson<unknown>('/campaigns/start-narration', { method: 'POST', body: JSON.stringify({ campaign_id: campaignId, session_id: sessionId }) }),
 
   getSession: (id: string) => fetchJson<unknown>(`/sessions/${id}`),
   getActiveSession: (campaignId: string) => fetchJson<unknown>(`/sessions/campaign/${campaignId}/active`),
@@ -66,9 +64,16 @@ export const api = {
     fetchJson<unknown>('/actions', { method: 'POST', body: JSON.stringify(data) }),
   endTurn: (sessionId: string) =>
     fetchJson<unknown>('/actions/end-turn', { method: 'POST', body: JSON.stringify({ session_id: sessionId }) }),
-  changeGameMode: (sessionId: string, mode: string, data?: unknown) =>
-    fetchJson<unknown>('/actions/mode', { method: 'POST', body: JSON.stringify({ session_id: sessionId, mode, data }) }),
+  changeGameMode: (sessionId: string, mode: string) =>
+    fetchJson<{ success: boolean; mode: string; turn_state: unknown }>(`/sessions/${sessionId}/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
 
   getGameState: (campaignId: string) => fetchJson<unknown>(`/state/campaign/${campaignId}`),
   getTemplates: () => fetchJson<unknown[]>('/state/templates'),
+
+  getTerrain: (sessionId: string, cx: number, cy: number, radius = 60) =>
+    fetchJson<{
+      tiles: Array<{ x: number; y: number; terrain_type: string; metadata?: Record<string, unknown> }>;
+      buildings: Array<{ gridPoly: Array<[number, number]> }>;
+      roads: Array<{ gridLine: Array<[number, number]>; highway: string }>;
+    }>(`/terrain?session_id=${sessionId}&cx=${cx}&cy=${cy}&radius=${radius}`),
 };
