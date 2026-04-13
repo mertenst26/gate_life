@@ -11,6 +11,7 @@ import type {
   Campaign,
   Session,
   Combatant,
+  Enemy,
   ChatMessage,
   GameMode,
   TurnState,
@@ -18,6 +19,7 @@ import type {
 } from '@gate-life/shared';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { api } from '../hooks/useApi';
+import type { DiceRollEvent } from '../components/DiceRollWidget';
 
 interface GameState {
   userId: string;
@@ -25,19 +27,28 @@ interface GameState {
   campaign: Campaign | null;
   session: Session | null;
   party: Combatant[];
+  /** Detected scenario entities (enemies, friendlies, vehicles, POIs). */
+  detectedEntities: Enemy[];
+  /** Scenario-placed NPCs (not in party HUD) — same tactical grid as party */
+  worldNpcs: Combatant[];
   messages: ChatMessage[];
   myCharacterId: string | null;
   connected: boolean;
   gmThinking: boolean;
-  agentThinkingId: string | null; // combatant ID of agent currently generating a response
+  agentThinkingId: string | null;
+  /** Queue of dice rolls to animate — each item shows then is removed. */
+  diceRollQueue: DiceRollEvent[];
 }
 
 type GameAction =
   | { type: 'SET_CAMPAIGN'; payload: Campaign }
   | { type: 'SET_SESSION'; payload: Session }
   | { type: 'SET_PARTY'; payload: Combatant[] }
+  | { type: 'SET_WORLD_NPCS'; payload: Combatant[] }
   | { type: 'UPDATE_COMBATANT'; payload: Combatant }
   | { type: 'ADD_COMBATANT'; payload: Combatant }
+  | { type: 'SET_DETECTED_ENTITIES'; payload: Enemy[] }
+  | { type: 'UPSERT_DETECTED_ENTITY'; payload: Enemy }
   | { type: 'SET_MESSAGES'; payload: ChatMessage[] }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'SET_MODE'; payload: GameMode }
@@ -47,7 +58,9 @@ type GameAction =
   | { type: 'SET_CONNECTED'; payload: boolean }
   | { type: 'SET_GM_THINKING'; payload: boolean }
   | { type: 'SET_AGENT_THINKING'; payload: string | null }
-  | { type: 'SET_USER'; payload: { userId: string; role: 'gm' | 'player' | 'spectator' } };
+  | { type: 'SET_USER'; payload: { userId: string; role: 'gm' | 'player' | 'spectator' } }
+  | { type: 'ENQUEUE_DICE_ROLL'; payload: DiceRollEvent }
+  | { type: 'DEQUEUE_DICE_ROLL' };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -57,16 +70,45 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, session: action.payload };
     case 'SET_PARTY':
       return { ...state, party: action.payload };
-    case 'UPDATE_COMBATANT':
-      return {
-        ...state,
-        party: state.party.map(c => c.id === action.payload.id ? action.payload : c),
-      };
+    case 'SET_WORLD_NPCS':
+      return { ...state, worldNpcs: action.payload };
+    case 'UPDATE_COMBATANT': {
+      const id = action.payload.id;
+      if (state.party.some(c => c.id === id)) {
+        return {
+          ...state,
+          party: state.party.map(c => c.id === id ? action.payload : c),
+        };
+      }
+      if (state.worldNpcs.some(c => c.id === id)) {
+        return {
+          ...state,
+          worldNpcs: state.worldNpcs.map(c => c.id === id ? action.payload : c),
+        };
+      }
+      return state;
+    }
     case 'ADD_COMBATANT':
       return { ...state, party: [...state.party, action.payload] };
-    case 'SET_MESSAGES':
-      return { ...state, messages: action.payload };
+    case 'SET_DETECTED_ENTITIES':
+      return { ...state, detectedEntities: action.payload };
+    case 'UPSERT_DETECTED_ENTITY': {
+      const exists = state.detectedEntities.some(e => e.id === action.payload.id);
+      return {
+        ...state,
+        detectedEntities: exists
+          ? state.detectedEntities.map(e => e.id === action.payload.id ? action.payload : e)
+          : [...state.detectedEntities, action.payload],
+      };
+    }
+    case 'SET_MESSAGES': {
+      // Merge with any WebSocket messages already in state, deduplicating by id
+      const incomingIds = new Set(action.payload.map((m: ChatMessage) => m.id));
+      const wsOnly = state.messages.filter(m => !incomingIds.has(m.id));
+      return { ...state, messages: [...action.payload, ...wsOnly] };
+    }
     case 'ADD_MESSAGE':
+      if (state.messages.some(m => m.id === action.payload.id)) return state;
       return { ...state, messages: [...state.messages, action.payload] };
     case 'SET_MODE':
       return {
@@ -93,6 +135,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, agentThinkingId: action.payload };
     case 'SET_USER':
       return { ...state, userId: action.payload.userId, role: action.payload.role };
+    case 'ENQUEUE_DICE_ROLL':
+      return { ...state, diceRollQueue: [...state.diceRollQueue, action.payload] };
+    case 'DEQUEUE_DICE_ROLL':
+      return { ...state, diceRollQueue: state.diceRollQueue.slice(1) };
     default:
       return state;
   }
@@ -106,11 +152,14 @@ const initialState: GameState = {
   campaign: null,
   session: null,
   party: [],
+  worldNpcs: [],
+  detectedEntities: [],
   messages: [],
   myCharacterId: sessionStorage.getItem(STORAGE_KEY_CHAR) ?? null,
   connected: false,
   gmThinking: false,
   agentThinkingId: null,
+  diceRollQueue: [],
 };
 
 interface GameContextType {
@@ -159,14 +208,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const unsubs: Array<() => void> = [];
 
     unsubs.push(ws.subscribe('session_state', (msg) => {
-      const { session, campaign, party } = msg.payload as {
+      const { session, campaign, party, world_npcs, detectedEntities } = msg.payload as {
         session?: Session;
         campaign?: Campaign;
         party?: Combatant[];
+        world_npcs?: Combatant[];
+        detectedEntities?: Enemy[];
       };
       if (campaign) dispatch({ type: 'SET_CAMPAIGN', payload: campaign });
       if (session) dispatch({ type: 'SET_SESSION', payload: session });
       if (party) dispatch({ type: 'SET_PARTY', payload: party });
+      if (world_npcs) dispatch({ type: 'SET_WORLD_NPCS', payload: world_npcs });
+      if (detectedEntities) dispatch({ type: 'SET_DETECTED_ENTITIES', payload: detectedEntities });
     }));
 
     unsubs.push(ws.subscribe('chat_message', (msg) => {
@@ -184,12 +237,32 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }));
 
     unsubs.push(ws.subscribe('combatant_update', (msg) => {
-      dispatch({ type: 'UPDATE_COMBATANT', payload: msg.payload as Combatant });
+      const c = msg.payload as Combatant;
+      console.log(`[GameContext] combatant_update: ${c.id?.slice(-4)} → (${c.tactical_x},${c.tactical_y})`);
+      dispatch({ type: 'UPDATE_COMBATANT', payload: c });
+    }));
+
+    unsubs.push(ws.subscribe('error', (msg) => {
+      console.warn('[GameContext] server error:', (msg.payload as any)?.message);
     }));
 
     unsubs.push(ws.subscribe('party_update', (msg) => {
       const party = msg.payload as Combatant[];
       dispatch({ type: 'SET_PARTY', payload: party });
+    }));
+
+    unsubs.push(ws.subscribe('enemy_update', (msg) => {
+      const entity = msg.payload as Enemy;
+      if (entity.detected) {
+        dispatch({ type: 'UPSERT_DETECTED_ENTITY', payload: entity });
+      }
+    }));
+
+    unsubs.push(ws.subscribe('wandering_monster_encounter', (msg) => {
+      const { enemy } = msg.payload as { enemy: Enemy };
+      if (enemy) {
+        dispatch({ type: 'UPSERT_DETECTED_ENTITY', payload: { ...enemy, detected: true } });
+      }
     }));
 
     unsubs.push(ws.subscribe('gm_thinking', (msg) => {
@@ -202,6 +275,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_AGENT_THINKING', payload: thinking ? actor_id : null });
     }));
 
+    unsubs.push(ws.subscribe('dice_roll', (msg) => {
+      const roll = msg.payload as DiceRollEvent;
+      // gm_only rolls are only shown to the GM role — for now show to all since
+      // we don't have GM role detection at this layer; the widget itself is subtle.
+      dispatch({ type: 'ENQUEUE_DICE_ROLL', payload: roll });
+    }));
+
     return () => unsubs.forEach(fn => fn());
   }, [ws.subscribe]);
 
@@ -210,10 +290,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       campaign?: Campaign;
       session?: Session;
       party?: Combatant[];
+      world_npcs?: Combatant[];
     };
     if (data.campaign) dispatch({ type: 'SET_CAMPAIGN', payload: data.campaign });
     if (data.session) dispatch({ type: 'SET_SESSION', payload: data.session });
     if (data.party) dispatch({ type: 'SET_PARTY', payload: data.party });
+    if (data.world_npcs) dispatch({ type: 'SET_WORLD_NPCS', payload: data.world_npcs });
 
     if (data.session?.id) {
       const messages = (await api.getMessages(campaignId, data.session.id)) as ChatMessage[];

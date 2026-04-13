@@ -8,7 +8,8 @@ export async function stateRoutes(app: FastifyInstance) {
     if (!campaign) return app.httpErrors.notFound('Campaign not found');
     const session = gameState.getActiveSession(req.params.campaignId);
     const party = gameState.getPartyCombatants(req.params.campaignId);
-    return { campaign, session, party };
+    const world_npcs = gameState.getWorldNpcCombatants(req.params.campaignId);
+    return { campaign, session, party, world_npcs };
   });
 
   app.get<{ Params: { sessionId: string } }>('/session/:sessionId/enemies', async (req) => {

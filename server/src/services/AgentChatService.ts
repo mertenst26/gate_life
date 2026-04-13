@@ -10,6 +10,10 @@ import { llmChat, type LlmMessage } from './LlmService.js';
 import { gameState } from './GameStateService.js';
 import { broadcastToSession } from '../ws/handler.js';
 import type { Combatant, ChatMessage } from '@gate-life/shared';
+import {
+  auditPlayerCapabilityClaims,
+  formatSingleCombatantSelfKnowledge,
+} from './CharacterCapabilityService.js';
 
 function buildAgentSystemPrompt(agent: Combatant, party: Combatant[], isTactical = false): string {
   const p = agent.personality;
@@ -43,11 +47,14 @@ ${partyDesc || '- (none)'}
 
 CURRENT MODE: ${isTactical ? 'TACTICAL COMBAT — keep replies terse, combat-focused.' : 'OPEN CONVERSATION — relax, be yourself, speak freely within your personality.'}
 
+${formatSingleCombatantSelfKnowledge(agent)}
+
 RULES:
 - Respond in first person as ${agent.name}. Stay in character at ALL times.
 - Keep replies SHORT — 1 to 3 sentences maximum.
 - Match your speech style. ${isTactical ? 'Be clipped and combat-focused.' : 'You can be more expressive and personal outside of combat.'}
 - You are a party member, NOT the Game Master. Never narrate the world or control other characters.
+- ONLY reference equipment, skills, languages, and psionic powers that appear on YOUR SHEET above. Never invent items or abilities. If you do not have something, say so in character.
 - If asked about game mechanics or your status, answer from your character's perspective ("I've got maybe 40 hit points left, feeling rough").
 - No asterisks, no stage directions, no quotation marks around your whole reply. Just speak.
 - You have genuine opinions, preferences, fears, and memories. Answer questions as this specific character would.`;
@@ -103,7 +110,11 @@ class AgentChatService {
     // Ensure the conversation ends with the player's message as a user turn
     const playerActor = party.find(c => c.id === playerMessage.actor_id);
     const playerName = playerActor?.name ?? 'Player';
-    const lastUserMsg = `[${playerName}]: ${playerMessage.content}`;
+    const audit = auditPlayerCapabilityClaims(playerMessage.content, playerActor);
+    const auditTail = audit.issues.length
+      ? `\n[Their sheet may not support what they claimed: ${audit.issues.join(' • ')}]`
+      : '';
+    const lastUserMsg = `[${playerName}]: ${playerMessage.content}${auditTail}`;
 
     if (history.length === 0 || history[history.length - 1].role !== 'user') {
       history.push({ role: 'user', content: lastUserMsg });

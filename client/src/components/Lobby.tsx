@@ -282,6 +282,9 @@ export function Lobby({ onStartGame, onBuildScenario, onEditScenario }: LobbyPro
 
       {step === 'create_character' && (
         <div className="create-character fade-in">
+          <button className="btn btn-sm" style={{ alignSelf: 'flex-start', marginBottom: '1rem' }} onClick={() => setStep('join')}>
+            &larr; Back
+          </button>
           <h2>Create Your Dog Boy</h2>
           <p className="text-sm text-secondary">
             Choose a name for your Dog Boy. All stats are pre-set from the Psi-Hound template.

@@ -108,6 +108,57 @@ export class TacticalService {
     return threats;
   }
 
+  /**
+   * Converts a compass facing string to a radian angle measured from the
+   * positive-x axis (east = 0, north = PI/2, west = PI, south = -PI/2).
+   * Returns null if the facing is unrecognised.
+   */
+  getFacingAngle(facing: string): number | null {
+    const map: Record<string, number> = {
+      east:      0,
+      northeast: Math.PI / 4,
+      north:     Math.PI / 2,
+      northwest: 3 * Math.PI / 4,
+      west:      Math.PI,
+      southwest: -3 * Math.PI / 4,
+      south:     -Math.PI / 2,
+      southeast: -Math.PI / 4,
+    };
+    return map[facing.toLowerCase()] ?? null;
+  }
+
+  /**
+   * Returns true if `target` is within the observer's facing arc.
+   *
+   * `arcHalfAngle` is the half-width of the visible cone (default PI/2 = 90°
+   * either side → 180° total forward hemisphere).  If the observer has no
+   * facing, they are assumed to see in all directions (returns true).
+   */
+  isInFacingArc(
+    observerPos: Position,
+    observerFacing: string | undefined,
+    targetPos: Position,
+    arcHalfAngle = Math.PI / 2,
+  ): boolean {
+    if (!observerFacing) return true;
+
+    const facingRad = this.getFacingAngle(observerFacing);
+    if (facingRad === null) return true;
+
+    const dx = targetPos.x - observerPos.x;
+    const dy = targetPos.y - observerPos.y;
+    if (dx === 0 && dy === 0) return true;
+
+    const angleToTarget = Math.atan2(dy, dx);
+
+    let diff = angleToTarget - facingRad;
+    // Normalise to [-PI, PI]
+    while (diff > Math.PI)  diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+
+    return Math.abs(diff) <= arcHalfAngle;
+  }
+
   hasLineOfSight(
     from: Position,
     to: Position,

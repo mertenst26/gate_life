@@ -8,4 +8,5 @@ reference/
 coverage/
 *.log
 server/data/
+*.db
 *.tsbuildinfo

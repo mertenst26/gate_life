@@ -4,7 +4,7 @@ import type {
   Campaign, Session, Combatant, ChatMessage, GameEvent,
   Enemy, TacticalTile, Injury, InventoryItem, VitalSample,
   CreateCampaignRequest, CreateCombatantRequest, SendMessageRequest,
-  GameMode, CombatantStatus, TurnState, WorldClock,
+  GameMode, CombatantStatus, TurnState, WorldClock, AgentGmConfig,
 } from '@gate-life/shared';
 
 export class GameStateService {
@@ -52,6 +52,23 @@ export class GameStateService {
     const db = getDb();
     db.prepare('UPDATE campaigns SET world_clock = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(clock), new Date().toISOString(), campaignId);
+  }
+
+  /** Shallow-merge patch into gm_agent_config; deep-merge quest_giver_progress when present. */
+  mergeGmAgentConfig(campaignId: string, patch: Partial<AgentGmConfig>): void {
+    const c = this.getCampaign(campaignId);
+    if (!c) return;
+    const base = c.gm_agent_config ?? {};
+    const merged: AgentGmConfig = { ...base, ...patch };
+    if (patch.quest_giver_progress != null) {
+      merged.quest_giver_progress = {
+        ...(base.quest_giver_progress ?? {}),
+        ...patch.quest_giver_progress,
+      };
+    }
+    const db = getDb();
+    db.prepare('UPDATE campaigns SET gm_agent_config = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(merged), new Date().toISOString(), campaignId);
   }
 
   // ── Sessions ──
@@ -126,10 +143,13 @@ export class GameStateService {
     armor_mdc?: number; xp_next_level?: number;
     personality?: any;
     tactical_x?: number; tactical_y?: number;
+    party_member?: boolean;
   }): Combatant {
     const db = getDb();
     const id = uuid();
     const now = new Date().toISOString();
+
+    const partyMember = req.party_member === false ? 0 : 1;
 
     db.prepare(`
       INSERT INTO combatants (
@@ -139,7 +159,7 @@ export class GameStateService {
         armor_mdc_current, armor_mdc_max,
         apm, initiative_bonus, strike_bonus, parry_bonus, dodge_bonus, roll_with_impact_bonus, damage_bonus,
         psionic_powers, skills, inventory, equipped,
-        xp_next_level, tactical_x, tactical_y,
+        xp_next_level, tactical_x, tactical_y, party_member,
         created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?,
@@ -148,7 +168,7 @@ export class GameStateService {
         ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?,
+        ?, ?, ?, ?,
         ?, ?
       )
     `).run(
@@ -173,6 +193,7 @@ export class GameStateService {
       JSON.stringify(req.equipped ?? {}),
       req.xp_next_level ?? 2000,
       req.tactical_x ?? 0, req.tactical_y ?? 0,
+      partyMember,
       now, now
     );
 
@@ -194,7 +215,16 @@ export class GameStateService {
   getPartyCombatants(campaignId: string): Combatant[] {
     const db = getDb();
     const rows = db.prepare(
-      "SELECT * FROM combatants WHERE campaign_id = ? AND status != 'dead' ORDER BY created_at"
+      "SELECT * FROM combatants WHERE campaign_id = ? AND status != 'dead' AND COALESCE(party_member, 1) = 1 ORDER BY created_at"
+    ).all(campaignId) as any[];
+    return rows.map(r => this.rowToCombatant(r));
+  }
+
+  /** Scenario-placed NPCs: combatants on the map/tactical board but not in the party HUD */
+  getWorldNpcCombatants(campaignId: string): Combatant[] {
+    const db = getDb();
+    const rows = db.prepare(
+      "SELECT * FROM combatants WHERE campaign_id = ? AND status != 'dead' AND party_member = 0 ORDER BY created_at"
     ).all(campaignId) as any[];
     return rows.map(r => this.rowToCombatant(r));
   }
@@ -376,12 +406,13 @@ export class GameStateService {
     const db = getDb();
     const id = uuid();
     db.prepare(`
-      INSERT INTO enemies (id, session_id, name, enemy_type, hp_current, hp_max, sdc_current, sdc_max,
+      INSERT INTO enemies (id, session_id, name, enemy_type, icon_type, hp_current, hp_max, sdc_current, sdc_max,
         mdc_current, mdc_max, apm, initiative_bonus, strike_bonus, parry_bonus, dodge_bonus,
         damage, damage_type, tactical_x, tactical_y, abilities, loot_table)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, sessionId, enemy.name, enemy.enemy_type,
+      enemy.icon_type ?? null,
       enemy.hp_current ?? enemy.hp_max, enemy.hp_max,
       enemy.sdc_current ?? enemy.sdc_max ?? 0, enemy.sdc_max ?? 0,
       enemy.mdc_current ?? null, enemy.mdc_max ?? null,
@@ -398,17 +429,36 @@ export class GameStateService {
     const db = getDb();
     const row = db.prepare('SELECT * FROM enemies WHERE id = ?').get(id) as any;
     if (!row) return null;
-    return {
-      ...row,
-      abilities: JSON.parse(row.abilities),
-      loot_table: JSON.parse(row.loot_table),
-    };
+    return this.parseEnemyRow(row);
   }
 
   getSessionEnemies(sessionId: string): Enemy[] {
     const db = getDb();
     const rows = db.prepare("SELECT * FROM enemies WHERE session_id = ? AND status != 'dead'").all(sessionId) as any[];
-    return rows.map(r => ({ ...r, abilities: JSON.parse(r.abilities), loot_table: JSON.parse(r.loot_table) }));
+    return rows.map(r => this.parseEnemyRow(r));
+  }
+
+  private parseEnemyRow(r: any): Enemy {
+    return {
+      ...r,
+      facing: r.facing ?? undefined,
+      icon_type: r.icon_type ?? undefined,
+      abilities: JSON.parse(r.abilities ?? '[]'),
+      loot_table: JSON.parse(r.loot_table ?? '[]'),
+      detected: Boolean(r.detected),
+      quest_poi: Boolean(r.quest_poi),
+    };
+  }
+
+  markEnemyDetected(id: string): void {
+    const db = getDb();
+    db.prepare('UPDATE enemies SET detected = 1 WHERE id = ?').run(id);
+  }
+
+  /** Reveal a POI on the map as a quest destination (yellow marker). */
+  markPoiQuestReveal(id: string): void {
+    const db = getDb();
+    db.prepare('UPDATE enemies SET detected = 1, quest_poi = 1 WHERE id = ?').run(id);
   }
 
   updateEnemyHp(id: string, hp: number, status?: CombatantStatus): void {
@@ -420,9 +470,13 @@ export class GameStateService {
     }
   }
 
-  updateEnemyPosition(id: string, x: number, y: number): void {
+  updateEnemyPosition(id: string, x: number, y: number, facing?: string): void {
     const db = getDb();
-    db.prepare('UPDATE enemies SET tactical_x = ?, tactical_y = ? WHERE id = ?').run(x, y, id);
+    if (facing) {
+      db.prepare('UPDATE enemies SET tactical_x = ?, tactical_y = ?, facing = ? WHERE id = ?').run(x, y, facing, id);
+    } else {
+      db.prepare('UPDATE enemies SET tactical_x = ?, tactical_y = ? WHERE id = ?').run(x, y, id);
+    }
   }
 
   // ── Tactical Terrain ──
@@ -533,6 +587,7 @@ export class GameStateService {
       status_effects: JSON.parse(row.status_effects),
       injuries: [],
       pack_howl_remaining: row.pack_howl_remaining,
+      party_member: row.party_member === undefined || row.party_member === null ? true : row.party_member === 1,
     };
   }
 }

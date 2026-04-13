@@ -87,7 +87,7 @@ export const api = {
   // ── Scenarios ──
   getScenarios: () => fetchJson<unknown[]>('/scenarios'),
 
-  createScenario: (data: { name: string; description?: string; gm_kind: string; start_lat: number; start_lng: number }) =>
+  createScenario: (data: { name: string; description?: string; gm_kind: string; start_lat: number; start_lng: number; wandering_monster_config?: Record<string, unknown> }) =>
     fetchJson<unknown>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),
 
   getScenario: (id: string) => fetchJson<unknown>(`/scenarios/${id}`),
@@ -97,6 +97,12 @@ export const api = {
 
   deleteScenario: (id: string) =>
     fetchJson<unknown>(`/scenarios/${id}`, { method: 'DELETE' }),
+
+  chatScenarioSetting: (data: { lat: number; lng: number; messages: Array<{ role: 'user' | 'assistant'; content: string }> }) =>
+    fetchJson<{ reply: string; suggestions: string[] }>(
+      '/scenarios/setting-chat',
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
 
   chatScenarioEntity: (scenarioId: string, data: { entity_type: string; lat: number; lng: number; messages: Array<{ role: string; content: string }> }) =>
     fetchJson<{ reply: string; definition?: Record<string, unknown>; name?: string; suggestions?: Array<{ question: string; chips: string[] }> }>(
@@ -118,4 +124,38 @@ export const api = {
       `/scenarios/${scenarioId}/launch`,
       { method: 'POST', body: JSON.stringify({}) },
     ),
+
+  chatWanderingMonster: (
+    scenarioId: string,
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  ) =>
+    fetchJson<{
+      reply: string;
+      config?: {
+        enabled: boolean;
+        encounter_chance: number;
+        monster_name: string;
+        monster_definition: Record<string, unknown>;
+        notes?: string;
+      };
+      suggestions?: Array<{ question: string; chips: string[] }>;
+    }>(`/scenarios/${scenarioId}/wandering-monster/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }),
+
+  saveWanderingMonsterConfig: (
+    scenarioId: string,
+    config: {
+      enabled: boolean;
+      encounter_chance: number;
+      monster_name: string;
+      monster_definition: Record<string, unknown>;
+      notes?: string;
+    } | null,
+  ) =>
+    fetchJson<unknown>(`/scenarios/${scenarioId}/wandering-monster`, {
+      method: 'PUT',
+      body: JSON.stringify({ wandering_monster_config: config }),
+    }),
 };

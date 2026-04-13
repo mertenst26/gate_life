@@ -104,6 +104,9 @@ CREATE TABLE IF NOT EXISTS combatants (
   -- Unique action charges
   pack_howl_remaining INTEGER NOT NULL DEFAULT 1,
 
+  -- Party HUD: 1 = player / companion; 0 = scenario NPC (map + tactical only)
+  party_member INTEGER NOT NULL DEFAULT 1,
+
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -162,6 +165,7 @@ CREATE TABLE IF NOT EXISTS enemies (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   enemy_type TEXT NOT NULL,
+  icon_type TEXT, -- optional map token override (e.g. npc); mechanical role stays in enemy_type
   hp_current INTEGER NOT NULL,
   hp_max INTEGER NOT NULL,
   sdc_current INTEGER NOT NULL DEFAULT 0,
@@ -177,9 +181,12 @@ CREATE TABLE IF NOT EXISTS enemies (
   damage_type TEXT NOT NULL DEFAULT 'sdc',
   tactical_x INTEGER,
   tactical_y INTEGER,
+  facing TEXT,
   status TEXT NOT NULL DEFAULT 'alive',
   abilities TEXT DEFAULT '[]', -- JSON
   loot_table TEXT DEFAULT '[]', -- JSON
+  detected INTEGER NOT NULL DEFAULT 0, -- 1 when party has spotted this entity
+  quest_poi INTEGER NOT NULL DEFAULT 0, -- 1 = active quest destination (yellow map marker)
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -224,11 +231,11 @@ CREATE TABLE IF NOT EXISTS scenarios (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Scenario entities (pre-placed enemies and NPCs on the map)
+-- Scenario entities (pre-placed enemies, NPCs, friendly units, vehicles, and POIs)
 CREATE TABLE IF NOT EXISTS scenario_entities (
   id TEXT PRIMARY KEY,
   scenario_id TEXT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
-  entity_type TEXT NOT NULL CHECK (entity_type IN ('enemy', 'npc')),
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('enemy', 'npc', 'friendly', 'vehicle', 'poi')),
   grid_x INTEGER NOT NULL DEFAULT 0,
   grid_y INTEGER NOT NULL DEFAULT 0,
   lat REAL NOT NULL,

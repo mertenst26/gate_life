@@ -1,0 +1,226 @@
+# Dog Boy / Psi-Hound — randomized creation tables
+#
+# Modeled on Palladium Rifts Dog Boy (Psi-Hound) character creation: rolled attributes,
+# random breed stock, and d100 genetic variance / mutations. **Verify numbers and text
+# against your copy of Rifts Ultimate Edition** (commonly cited around p. 142 for OCC detail).
+# This file is a game implementation aid, not a reproduction of copyrighted rules text.
+
+reference_note: >-
+  Tables are inspired by Rifts UE Dog Boy creation (breed stock, genetic quirks, randomization).
+  GMs should confirm die ranges and modifiers against the official book.
+
+# Core physical & mental stats: standard Palladium human-range roll (3d6 each).
+attribute_rolls:
+  iq: "3d6"
+  me: "3d6"
+  ma: "3d6"
+  ps: "3d6"
+  pp: "3d6"
+  pe: "3d6"
+  pb: "3d6"
+
+# Speed — Psi-Hounds are fast; bipedal base then quadruped run (2d6+18, Palladium-style).
+spd_bipedal: "2d6+18"
+# Quadruped multiplier applied in code from final bipedal value.
+
+# Structural Damage Capacity — base roll on top of breed (not raw UE text; tuned for this app).
+base_sdc_roll: "1d6+34"
+
+# P.P.E. minor variance (Psi-Hounds are not mages but carry a little ambient PPE).
+ppe_roll: "2d6+12"
+
+# How many d100 genetic / mutation rolls (in addition to breed stock).
+mutation_rolls: 2
+
+# Optional: roll one extra minor psionic from early unlock list (weighted toward low tier).
+bonus_psionic_chance_percent: 15
+
+# --- Breed stock (roll 1d20) — flavor + small mechanical bias ---
+breeds:
+  - roll: [1, 1]
+    name: "Shepherd / Malinois stock"
+    blurb: "Military lines; intense focus and stamina."
+    modifiers: { iq: 1, pe: 1, pp: 1, sdc: 8 }
+  - roll: [2, 2]
+    name: "Doberman / pinscher stock"
+    blurb: "Lean, aggressive profile; lightning reflexes."
+    modifiers: { pp: 2, ma: -1, sdc: 4 }
+  - roll: [3, 3]
+    name: "Retriever stock"
+    blurb: "Hardy, affable build; popular with field medics."
+    modifiers: { pe: 2, iq: 1, sdc: 10 }
+  - roll: [4, 4]
+    name: "Bulldog / mastiff stock"
+    blurb: "Heavy frame; soaks punishment."
+    modifiers: { ps: 2, pe: 1, pb: -1, sdc: 14 }
+  - roll: [5, 5]
+    name: "Husky / malamute stock"
+    blurb: "Cold-adapted; tireless in bad terrain."
+    modifiers: { pe: 2, pp: 1, sdc: 6 }
+  - roll: [6, 6]
+    name: "Collie / shepherd mix stock"
+    blurb: "Sharp herd instinct; reads crowds well."
+    modifiers: { iq: 1, me: 1, ma: 1 }
+  - roll: [7, 7]
+    name: "Terrier stock"
+    blurb: "Small but fearless; nasty in a clinch."
+    modifiers: { ps: 1, pp: 2, sdc: 2 }
+  - roll: [8, 8]
+    name: "Hound / scent-hound stock"
+    blurb: "Nose-first; legendary trackers."
+    modifiers: { iq: 1, pe: 1, sdc: 4 }
+  - roll: [9, 9]
+    name: "Wolf-heavy hybrid stock"
+    blurb: "Wilder look; peers uneasy in CS cities."
+    modifiers: { ps: 1, pe: 1, ma: -1, sdc: 6 }
+  - roll: [10, 10]
+    name: "Spitz / northern stock"
+    blurb: "Thick coat; shrugs off weather."
+    modifiers: { pe: 2, sdc: 8 }
+  - roll: [11, 11]
+    name: "Lab / water-dog stock"
+    blurb: "Strong swimmer; steady nerves."
+    modifiers: { pe: 1, pp: 1, sdc: 8 }
+  - roll: [12, 12]
+    name: "Rottweiler stock"
+    blurb: "Intimidating presence; anchor in a firefight."
+    modifiers: { ps: 2, pe: 1, pb: 1, sdc: 6 }
+  - roll: [13, 13]
+    name: "Mixed / shelter stock"
+    blurb: "Inconsistent looks; scrappy survivors."
+    modifiers: { iq: 1, ma: 1, sdc: 4 }
+  - roll: [14, 14]
+    name: "Pointer / gun-dog stock"
+    blurb: "Wide vision; spots movement fast."
+    modifiers: { pp: 2, iq: 1, sdc: 4 }
+  - roll: [15, 15]
+    name: "Sighthound stock"
+    blurb: "Deep chest, explosive sprint."
+    modifiers: { pp: 2, pe: 1, ps: -1, sdc: 2 }
+  - roll: [16, 16]
+    name: "Pit / bully stock"
+    blurb: "Compact muscle; grim determination."
+    modifiers: { ps: 2, pe: 2, iq: -1, sdc: 8 }
+  - roll: [17, 17]
+    name: "Experimental batch — black fur"
+    blurb: "Rumor says R&D tweaks; odd lab results."
+    modifiers: { me: 1, pe: 1, sdc: 4 }
+  - roll: [18, 18]
+    name: "Experimental batch — pale coat"
+    blurb: "Albino-adjacent; sun-sensitive eyes."
+    modifiers: { iq: 1, pp: -1, ma: 1 }
+  - roll: [19, 19]
+    name: "Escaped training line"
+    blurb: "Discipline gaps; fierce independence."
+    modifiers: { ma: 2, iq: 1, parry_bonus: -1 }
+  - roll: [20, 20]
+    name: "Rare prototype — 'ghost' markings"
+    blurb: "Unusual pattern; draws stares."
+    modifiers: { me: 2, isp_bonus: 4, sdc: -4 }
+
+# --- Genetic variance / mutations (d100 per roll) — mostly flavor; some tweak stats ---
+mutations:
+  - from: 1
+    to: 10
+    name: "Genome within CS norms"
+    description: "No notable extra mutations flagged in the dossier."
+    modifiers: {}
+  - from: 11
+    to: 15
+    name: "Hypertrophied olfactory bulbs"
+    description: "Even sharper scent discrimination; headaches near chemical plants."
+    modifiers: { iq: 1 }
+  - from: 16
+    to: 20
+    name: "Reinforced leg tendons"
+    description: "Slightly faster acceleration on all fours."
+    modifiers: { pp: 1 }
+  - from: 21
+    to: 25
+    name: "Dense dermal layer"
+    description: "Tougher hide; old scars keloid badly."
+    modifiers: { sdc: 6 }
+  - from: 26
+    to: 30
+    name: "Low-grade photosensitivity"
+    description: "Squints in harsh glare; prefers dusk ops."
+    modifiers: { strike_bonus: -1 }
+  - from: 31
+    to: 35
+    name: "Elevated adrenal baseline"
+    description: "Fast twitch; irritable when idle too long."
+    modifiers: { pp: 1, pe: 1, ma: -1 }
+  - from: 36
+    to: 40
+    name: "Minor spinal curvature"
+    description: "Slight hunch; long marches ache."
+    modifiers: { pe: -1, sdc: 4 }
+  - from: 41
+    to: 45
+    name: "Expanded inner ear"
+    description: "Picks up ultrasonic whine; nausea near bad speakers."
+    modifiers: { initiative_bonus: 1 }
+  - from: 46
+    to: 50
+    name: "Blood chemistry anomaly"
+    description: "Clots fast; medkits sting more."
+    modifiers: { pe: 1 }
+  - from: 51
+    to: 55
+    name: "Psionic bleed-through"
+    description: "ISP fluctuates; emotions leak to empaths."
+    modifiers: { isp_bonus: 3, me: -1 }
+  - from: 56
+    to: 60
+    name: "Overbite / heavy jaw"
+    description: "Intimidating grin; dental maintenance."
+    modifiers: { ps: 1, pb: -1 }
+  - from: 61
+    to: 65
+    name: "Patchy pigmentation"
+    description: "Cosmetic only; some prejudice in CS ranks."
+    modifiers: { ma: -1 }
+  - from: 66
+    to: 70
+    name: "Heat-tolerant metabolism"
+    description: "Handles desert ops; cold hits harder."
+    modifiers: { pe: 1 }
+  - from: 71
+    to: 75
+    name: "Cold-tolerant metabolism"
+    description: "High-altitude comfort; sluggish in heat."
+    modifiers: { pe: 1 }
+  - from: 76
+    to: 80
+    name: "Minor neural tremor"
+    description: "Fine motor suffers when stressed."
+    modifiers: { strike_bonus: -1, initiative_bonus: 1 }
+  - from: 81
+    to: 85
+    name: "Residual rift exposure (embryonic)"
+    description: "Weird dreams; slight PPE tick."
+    modifiers: { ppe_bonus: 4 }
+  - from: 86
+    to: 90
+    name: "Compensated hearing loss (one ear)"
+    description: "Relies on good side; ambush drills helped."
+    modifiers: { pp: -1, dodge_bonus: 1 }
+  - from: 91
+    to: 95
+    name: "Muscle hypertrophy (arms)"
+    description: "Stronger grip; sleeves wear fast."
+    modifiers: { ps: 2, pp: -1 }
+  - from: 96
+    to: 100
+    name: "Latent psionic surge"
+    description: "Rare spike under stress — medics note odd EEG."
+    modifiers: { me: 1, isp_bonus: 6 }
+    grant_bonus_psionic: true
+
+# If mutation grants_bonus_psionic or random bonus hits — pick from these IDs (must exist on template unlockables ≤ level 3).
+bonus_psionic_pool:
+  - sense_evil
+  - sense_magic
+  - read_dimensional_portal
+  - sense_time
+  - total_recall

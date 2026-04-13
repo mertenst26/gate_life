@@ -12,6 +12,7 @@
 
 import { gameState } from './GameStateService.js';
 import { broadcastToSession, pendingAgentOrders } from '../ws/handler.js';
+import { revealOnFire } from './ContactDetectionService.js';
 import { rollStrike, rollDefense, rollDamage } from '@gate-life/shared';
 import type { Combatant, WSMessage } from '@gate-life/shared';
 import { parseMovement } from './MovementParser.js';
@@ -279,8 +280,54 @@ export async function executeAgentTurn(
     if (eDist <= RANGED_ATTACK_RANGE) {
       // Weapon data
       const weapon = agent.inventory.find(i => i.equipped && (i.type === 'weapon_ranged' || i.type === 'weapon_melee'));
+      const isRanged = weapon?.type === 'weapon_ranged' || eDist > MELEE_RANGE;
       const damageDice = weapon?.damage ?? '2d6';
       const damageType = weapon?.damage_type ?? 'sdc';
+
+      // When a party agent fires a ranged weapon the shot is loud — any
+      // undetected hostile within sound range that can hear it gets a rough fix
+      // on the party's position.  We expose this by revealing them: they stop
+      // hiding and start moving toward the noise.  We post a one-line system
+      // alert for each newly flushed entity so the player knows they stirred
+      // something up, without attributing the "muzzle flash" to the wrong side.
+      if (isRanged) {
+        const SOUND_RANGE = 80; // cells — same constant used in ContactDetectionService
+        const undetectedHostiles = gameState.getSessionEnemies(sessionId)
+          .filter(e => !e.detected && e.status !== 'dead'
+            && e.enemy_type !== 'friendly' && e.enemy_type !== 'poi' && e.enemy_type !== 'neutral'
+            && e.tactical_x != null && e.tactical_y != null
+            && Math.sqrt((e.tactical_x - newX) ** 2 + (e.tactical_y - newY) ** 2) <= SOUND_RANGE);
+
+        for (const hostile of undetectedHostiles) {
+          gameState.markEnemyDetected(hostile.id);
+          const detectedHostile = { ...hostile, detected: true };
+          bcast({ type: 'enemy_update', payload: detectedHostile, timestamp: now() });
+
+          // Directional blurb: approximate bearing from party shooter to flushed hostile
+          const dx = (hostile.tactical_x ?? 0) - newX;
+          const dy = (hostile.tactical_y ?? 0) - newY;
+          const deg = Math.atan2(dy, dx) * 180 / Math.PI;
+          const compass =
+            deg > -22.5  && deg <= 22.5  ? 'east' :
+            deg > 22.5   && deg <= 67.5  ? 'northeast' :
+            deg > 67.5   && deg <= 112.5 ? 'north' :
+            deg > 112.5  && deg <= 157.5 ? 'northwest' :
+            deg > 157.5  || deg <= -157.5 ? 'west' :
+            deg > -157.5 && deg <= -112.5 ? 'southwest' :
+            deg > -112.5 && deg <= -67.5  ? 'south' : 'southeast';
+
+          const distFt = Math.round(Math.sqrt(dx * dx + dy * dy) * 10);
+          const flushMsg = gameState.createMessage({
+            campaign_id: campaignId,
+            session_id: sessionId,
+            message_type: 'system_alert',
+            content: `🔊 Gunshot echo — movement detected to the **${compass}** (~${distFt} ft). **${hostile.name}** is no longer hidden.`,
+            visibility: 'party',
+          });
+          bcast({ type: 'chat_message', payload: flushMsg, timestamp: now() });
+          console.log(`[agent-turn] gunshot flushed hidden entity "${hostile.name}" to the ${compass}`);
+        }
+      }
 
       // Strike roll
       const strikeRoll = rollStrike(agent.combat.strike_bonus);

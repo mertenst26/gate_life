@@ -6,6 +6,8 @@ import { aiGm } from '../services/AiGmService.js';
 import { parseMovement } from '../services/MovementParser.js';
 import { executeAgentTurn } from '../services/AgentTurnExecutor.js';
 import { agentChat } from '../services/AgentChatService.js';
+import { checkWanderingMonster } from '../services/WanderingMonsterService.js';
+import { checkContactAndEnterTactical } from '../services/ContactDetectionService.js';
 
 // ── Directed agent command helpers ────────────────────────────────────────────
 
@@ -274,9 +276,12 @@ function handleClientMessage(clientId: string, client: ConnectedClient, msg: any
       if (session) {
         const campaign = gameState.getCampaign(session.campaign_id);
         const party = gameState.getPartyCombatants(session.campaign_id);
+        const world_npcs = gameState.getWorldNpcCombatants(session.campaign_id);
+        // Include all detected scenario entities so the client can render them on maps/board
+        const detectedEntities = gameState.getSessionEnemies(session.id).filter(e => e.detected);
         client.socket.send(JSON.stringify({
           type: 'session_state',
-          payload: { session, campaign, party },
+          payload: { session, campaign, party, world_npcs, detectedEntities },
           timestamp: new Date().toISOString(),
         }));
 
@@ -400,6 +405,31 @@ function handleClientMessage(clientId: string, client: ConnectedClient, msg: any
                 });
                 broadcastToSession(client.sessionId, { type: 'chat_message', payload: confirmMsg, timestamp: new Date().toISOString() });
                 // Turn does NOT auto-advance — player clicks End Turn when ready.
+              } else {
+                // In conversation mode: check for contact with known enemies first,
+                // then check for wandering monster encounters.
+                checkContactAndEnterTactical(client.sessionId!, session.campaign_id)
+                  .catch(err => console.error('[contact-detection] pre-WM check error:', err));
+
+                const spd = combatant.attributes.spd_bipedal;
+                const metersPerTurn = spd * 1.524; // SPD × 5ft × 0.3048m
+                const turns = Math.max(1, Math.ceil((movement.distance_ft * 0.3048) / metersPerTurn));
+                const campaign = gameState.getCampaign(session.campaign_id);
+                checkWanderingMonster({
+                  sessionId: client.sessionId!,
+                  campaignId: session.campaign_id,
+                  campaign,
+                  turns,
+                  broadcast: (msg) => broadcastToSession(client.sessionId!, msg),
+                  onEncounter: (monsterName) => {
+                    // A new enemy just spawned — re-check contact detection so it can
+                    // immediately trigger tactical mode if the monster is in visual range.
+                    checkContactAndEnterTactical(client.sessionId!, session.campaign_id)
+                      .catch(err => console.error('[contact-detection] post-WM check error:', err));
+                    aiGm.narrateWanderingMonsterEncounter(session.campaign_id, client.sessionId!, monsterName)
+                      .catch(err => console.error('[wandering-monster] AI narration error:', err));
+                  },
+                }).catch(err => console.error('[wandering-monster] chat check error:', err));
               }
             }
           }
@@ -480,6 +510,7 @@ function handleClientMessage(clientId: string, client: ConnectedClient, msg: any
       }
 
       const updated = gameState.updateCombatantPosition(client.combatantId, target_x, target_y, facing);
+      console.log(`[tactical_move] position updated: ${updated?.name} → (${updated?.tactical_x},${updated?.tactical_y}) | broadcasting to session ${client.sessionId?.slice(-4)}`);
       if (updated) {
         broadcastToSession(client.sessionId, {
           type: 'combatant_update',
@@ -515,10 +546,24 @@ function handleClientMessage(clientId: string, client: ConnectedClient, msg: any
 
       if (orderIsStale) {
         console.log(`[end_turn] stale turn_order detected — re-rolling initiative`);
-        const rolled = party.map(c => ({
-          id: c.id,
-          roll: Math.floor(Math.random() * 20) + 1 + (c.combat.initiative_bonus ?? 0),
-        }));
+        const rolled = party.map(c => {
+          const natural = Math.floor(Math.random() * 20) + 1;
+          const bonus = c.combat.initiative_bonus ?? 0;
+          // Broadcast per-combatant dice roll so players see the animation
+          broadcastToSession(client.sessionId!, {
+            type: 'dice_roll',
+            payload: {
+              dice: 'd20',
+              results: [natural],
+              modifier: bonus,
+              total: natural + bonus,
+              natural,
+              label: `${c.name} initiative`,
+            },
+            timestamp: new Date().toISOString(),
+          });
+          return { id: c.id, roll: natural + bonus };
+        });
         rolled.sort((a, b) => b.roll - a.roll);
         const turn_order = rolled.map(r => r.id);
         const freshTs: TurnState = {
@@ -544,7 +589,8 @@ function handleClientMessage(clientId: string, client: ConnectedClient, msg: any
       }
 
       const nextIndex = (safeTs.current_actor_index + 1) % safeTs.turn_order.length;
-      const newRound = nextIndex === 0 ? safeTs.round + 1 : safeTs.round;
+      const roundIncremented = nextIndex === 0;
+      const newRound = roundIncremented ? safeTs.round + 1 : safeTs.round;
       const newTs: TurnState = {
         ...safeTs,
         current_actor_index: nextIndex,
@@ -562,6 +608,22 @@ function handleClientMessage(clientId: string, client: ConnectedClient, msg: any
         timestamp: new Date().toISOString(),
       });
       console.log(`[end_turn] advanced to actor index ${nextIndex} (${newTs.turn_order[nextIndex]})`);
+
+      // On a new round, check for wandering monster encounter
+      if (roundIncremented) {
+        const campaign = gameState.getCampaign(session.campaign_id);
+        checkWanderingMonster({
+          sessionId: client.sessionId!,
+          campaignId: session.campaign_id,
+          campaign,
+          turns: 1,
+          broadcast: (msg) => broadcastToSession(client.sessionId!, msg),
+          onEncounter: (monsterName) => {
+            aiGm.narrateWanderingMonsterEncounter(session.campaign_id, client.sessionId!, monsterName)
+              .catch(err => console.error('[wandering-monster] AI narration error:', err));
+          },
+        }).catch(err => console.error('[wandering-monster] check error:', err));
+      }
 
       // If next actor is an AI agent, trigger their turn automatically
       triggerAgentTurnIfNeeded(client.sessionId!, session.campaign_id)

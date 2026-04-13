@@ -1,8 +1,30 @@
 import { useGame } from '../context/GameContext';
-import { useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import type { ChatMessage, Combatant } from '@gate-life/shared';
+import { DiceRollWidget } from './DiceRollWidget';
 
-function MessageBubble({ msg, party }: { msg: ChatMessage; party: Combatant[] }) {
+const ACTIONS_RE = /<!--ACTIONS:(.*?)-->/s;
+
+function parseGmContent(content: string): { text: string; actions: string[] } {
+  const match = content.match(ACTIONS_RE);
+  if (!match) return { text: content.trim(), actions: [] };
+  const text = content.replace(ACTIONS_RE, '').trim();
+  try {
+    const parsed = JSON.parse(match[1]);
+    return { text, actions: Array.isArray(parsed) ? parsed : [] };
+  } catch {
+    return { text, actions: [] };
+  }
+}
+
+function MessageBubble({
+  msg, party, showActions, onAction,
+}: {
+  msg: ChatMessage;
+  party: Combatant[];
+  showActions?: boolean;
+  onAction?: (action: string) => void;
+}) {
   const actor = party.find(c => c.id === msg.actor_id);
   const actorName = actor?.name || (msg.message_type === 'gm_narration' ? 'GM' : 'System');
 
@@ -18,6 +40,10 @@ function MessageBubble({ msg, party }: { msg: ChatMessage; party: Combatant[] })
     }
   };
 
+  const { text, actions } = msg.message_type === 'gm_narration'
+    ? parseGmContent(msg.content)
+    : { text: msg.content, actions: [] };
+
   return (
     <div className={`chat-message ${getMessageClass()} fade-in`}>
       {msg.message_type !== 'system_alert' && (
@@ -31,7 +57,21 @@ function MessageBubble({ msg, party }: { msg: ChatMessage; party: Combatant[] })
           </span>
         </div>
       )}
-      <div className="msg-content">{msg.content}</div>
+      <div className="msg-content">{text}</div>
+      {showActions && actions.length > 0 && (
+        <div className="gm-action-chips">
+          {actions.map((a, i) => (
+            <button
+              key={i}
+              className="gm-action-chip"
+              onClick={() => onAction?.(a)}
+              title="Click to fill the input with this action"
+            >
+              {a}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -53,10 +93,13 @@ function ThinkingBubble({ name, isAgent }: { name: string; isAgent?: boolean }) 
 }
 
 export function ChatPanel() {
-  const { state, actions } = useGame();
+  const { state, actions, dispatch } = useGame();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const mode = state.session?.current_mode || 'conversation';
+
+  const currentRoll = state.diceRollQueue[0] ?? null;
+  const dismissRoll = useCallback(() => dispatch({ type: 'DEQUEUE_DICE_ROLL' }), [dispatch]);
 
   const isMyTurn = mode !== 'tactical' ||
     (state.session?.turn_state?.turn_order[state.session.turn_state.current_actor_index] === state.myCharacterId);
@@ -81,11 +124,30 @@ export function ChatPanel() {
     }
   };
 
+  // Index of the last gm_narration message (to show action chips only there)
+  const lastGmIdx = state.messages.reduce(
+    (last, msg, i) => (msg.message_type === 'gm_narration' ? i : last),
+    -1,
+  );
+
   return (
-    <div className="chat-panel panel">
+    <div className="chat-panel panel" style={{ position: 'relative' }}>
+      {currentRoll && (
+        <DiceRollWidget
+          key={`${currentRoll.label}-${currentRoll.total}-${Date.now()}`}
+          roll={currentRoll}
+          onDismiss={dismissRoll}
+        />
+      )}
       <div className="chat-messages" ref={scrollRef}>
-        {state.messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} party={state.party} />
+        {state.messages.map((msg, i) => (
+          <MessageBubble
+            key={msg.id}
+            msg={msg}
+            party={state.party}
+            showActions={canChat && i === lastGmIdx}
+            onAction={(a) => setInput(a)}
+          />
         ))}
         {state.messages.length === 0 && !state.gmThinking && !state.agentThinkingId && (
           <div className="chat-empty text-dim text-sm">

@@ -1,5 +1,6 @@
 import { gameState } from './GameStateService.js';
 import { getTemplate } from './ClassTemplateService.js';
+import { rollDogBoyCharacter } from './DogBoyCreationService.js';
 import type { Combatant, CombatantKind, InventoryItem, PersonalityProfile } from '@gate-life/shared';
 import { PARTY_MAX_SIZE } from '@gate-life/shared';
 import { v4 as uuid } from 'uuid';
@@ -20,7 +21,10 @@ export class CharacterService {
     const template = getTemplate('dog_boy');
     if (!template) throw new Error('Dog Boy template not found');
 
-    let personality: PersonalityProfile | undefined;
+    const rolled = rollDogBoyCharacter(template);
+    console.log(`[CharacterService] Dog Boy creation — ${rolled.creation_summary}`);
+
+    let personality: PersonalityProfile;
     if (opts.kind === 'agent') {
       const preset = opts.personalityPreset
         ? template.personality_presets.find((p: any) => p.id === opts.personalityPreset)
@@ -31,10 +35,38 @@ export class CharacterService {
           temperament: preset.temperament,
           combat_preference: preset.combat_preference,
           speech_style: preset.speech_style,
-          quirks: preset.quirks,
+          quirks: [...preset.quirks],
+        };
+      } else {
+        personality = {
+          temperament: 'determined',
+          combat_preference: 'balanced',
+          speech_style: 'direct',
+          quirks: [],
         };
       }
+    } else {
+      personality = {
+        temperament: 'determined',
+        combat_preference: 'balanced',
+        speech_style: 'direct',
+        quirks: [],
+      };
     }
+
+    const mutationEntries = rolled.mutation_rolls.map(m => ({
+      name: m.name,
+      description: m.description,
+    }));
+    personality.dog_boy_breed = rolled.breed_name;
+    personality.dog_boy_mutations = mutationEntries;
+    personality.quirks = [
+      ...(personality.quirks ?? []),
+      `Breed stock: ${rolled.breed_name}`,
+      ...rolled.mutation_rolls
+        .filter(m => !/genome within|within cs norms/i.test(m.name))
+        .map(m => `Genetic: ${m.name}`),
+    ].slice(0, 28);
 
     const inventory: InventoryItem[] = template.starting_gear.map((gear: any) => ({
       id: uuid(),
@@ -62,11 +94,14 @@ export class CharacterService {
       }
     }
 
-    const startingPowers = template.starting_psionic_powers.map((p: any) => p.id);
+    const startPowerIds = new Set(template.starting_psionic_powers.map((p: any) => p.id));
+    const bonusPsi = rolled.extra_psionic_power_ids.filter(id => !startPowerIds.has(id));
+    const startingPowers = [...template.starting_psionic_powers.map((p: any) => p.id), ...bonusPsi];
 
     // Spawn near average party position (or at 0,0 if party empty)
     const { spawnX, spawnY } = this.pickSpawnPosition(party);
 
+    const cd = rolled.combat_delta;
     return gameState.createCombatant({
       campaign_id: opts.campaignId,
       kind: opts.kind,
@@ -74,19 +109,19 @@ export class CharacterService {
       controller: opts.controller,
       tactical_x: spawnX,
       tactical_y: spawnY,
-      attributes: template.attributes,
-      hp: template.base_hp,
-      sdc: template.base_sdc,
-      isp: template.base_isp,
-      ppe: template.base_ppe,
+      attributes: rolled.attributes,
+      hp: rolled.hp,
+      sdc: rolled.sdc,
+      isp: rolled.isp,
+      ppe: rolled.ppe,
       apm: template.combat.base_apm,
       combat_bonuses: {
-        initiative_bonus: template.combat.initiative_bonus,
-        strike_bonus: template.combat.strike_bonus,
-        parry_bonus: template.combat.parry_bonus,
-        dodge_bonus: template.combat.dodge_bonus,
-        roll_with_impact_bonus: template.combat.roll_with_impact_bonus,
-        damage_bonus: template.combat.damage_bonus,
+        initiative_bonus: template.combat.initiative_bonus + (cd.initiative_bonus ?? 0),
+        strike_bonus: template.combat.strike_bonus + (cd.strike_bonus ?? 0),
+        parry_bonus: template.combat.parry_bonus + (cd.parry_bonus ?? 0),
+        dodge_bonus: template.combat.dodge_bonus + (cd.dodge_bonus ?? 0),
+        roll_with_impact_bonus: template.combat.roll_with_impact_bonus + (cd.roll_with_impact_bonus ?? 0),
+        damage_bonus: template.combat.damage_bonus + (cd.damage_bonus ?? 0),
       },
       armor_mdc: template.starting_gear.find((g: any) => g.type === 'armor')?.mdc ?? 0,
       psionic_powers: startingPowers,

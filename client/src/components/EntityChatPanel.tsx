@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { api } from '../hooks/useApi';
+import { useResizablePanelWidth } from '../hooks/useResizablePanelWidth';
 import type { ScenarioEntityType, ScenarioEntity, SuggestionGroup } from '@gate-life/shared';
 
 interface ChatMessage {
@@ -19,6 +20,8 @@ interface Props {
 }
 
 /** One color per suggestion group — cycles if there are more groups than colors. */
+const CHAT_PANEL_WIDTH_KEY = 'gate-life.panel.entityChat';
+
 const GROUP_COLORS = [
   { border: '#d4a057', bg: 'rgba(212,160,87,0.10)', text: '#d4a057' },  // amber
   { border: '#4fc3f7', bg: 'rgba(79,195,247,0.10)', text: '#4fc3f7' },  // cyan
@@ -27,7 +30,17 @@ const GROUP_COLORS = [
   { border: '#ef9a9a', bg: 'rgba(239,154,154,0.10)', text: '#ef9a9a' }, // rose
 ];
 
+/** POIs are a single location — no multi-icon placement. */
+const ENTITY_LABEL: Record<ScenarioEntityType, string> = {
+  enemy: 'Enemy',
+  npc: 'NPC',
+  friendly: 'Friendly unit',
+  vehicle: 'Vehicle',
+  poi: 'Point of interest',
+};
+
 export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEntity, onConfirm, onCancel }: Props) {
+  const { width: panelWidth, resizeHandleProps } = useResizablePanelWidth(CHAT_PANEL_WIDTH_KEY, 380);
   const isEditMode = !!existingEntity;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [suggestions, setSuggestions] = useState<SuggestionGroup[]>([]);
@@ -120,21 +133,32 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
     sendToAiRef.current(updated);
   }, [input, loading, messages]);
 
+  const allowPlacementCount = entityType !== 'poi';
+  const placeCount = allowPlacementCount ? count : 1;
+
   const handleConfirm = useCallback(() => {
     if (pendingDef) {
-      console.log(`[EntityChat] Confirming "${pendingDef.name}" × ${count}`, pendingDef.definition);
-      onConfirm(pendingDef.name, pendingDef.definition, count);
+      console.log(`[EntityChat] Confirming "${pendingDef.name}" × ${placeCount}`, pendingDef.definition);
+      onConfirm(pendingDef.name, pendingDef.definition, placeCount);
     }
-  }, [pendingDef, onConfirm, count]);
+  }, [pendingDef, onConfirm, placeCount]);
 
-  const label = entityType === 'enemy' ? 'Enemy' : 'NPC';
+  const label = ENTITY_LABEL[entityType];
   const panelTitle = isEditMode
     ? `Edit ${existingEntity?.name ?? label}`
     : `Define ${label}`;
   const visibleMessages = messages.slice(1);
 
   return (
-    <div className="entity-chat-panel panel fade-in">
+    <div className="entity-chat-panel panel fade-in" style={{ width: panelWidth }}>
+      <div
+        className="entity-panel-resize-handle entity-panel-resize-handle--chat"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize side panel"
+        tabIndex={0}
+        {...resizeHandleProps}
+      />
       <div className="entity-chat-header">
         <div>
           <h3>{panelTitle}</h3>
@@ -215,7 +239,7 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
           <span className="text-sm entity-confirm-name">
             <strong>{pendingDef.name}</strong>
           </span>
-          {!isEditMode && (
+          {!isEditMode && allowPlacementCount && (
             <div className="entity-count-stepper">
               <button
                 className="btn btn-sm entity-count-btn"
@@ -231,7 +255,11 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
             </div>
           )}
           <button className="btn btn-primary btn-sm" onClick={handleConfirm}>
-            {isEditMode ? 'Save Changes' : `Place${count > 1 ? ` ${count}×` : ''}`}
+            {isEditMode
+              ? 'Save Changes'
+              : allowPlacementCount && count > 1
+                ? `Place ${count}×`
+                : 'Place'}
           </button>
         </div>
       )}
@@ -242,7 +270,7 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSend()}
-          placeholder={loading ? 'AI is thinking...' : `Describe the ${label.toLowerCase()}...`}
+          placeholder={loading ? 'AI is thinking...' : `Describe the ${entityType === 'poi' ? 'point of interest' : label.toLowerCase()}...`}
           disabled={loading}
         />
         <button className="btn btn-sm" onClick={() => handleSend()} disabled={loading || !input.trim()}>

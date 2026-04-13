@@ -16,6 +16,10 @@ const MIN_TACTICAL_H = 160;
 const MAX_TACTICAL_H = 720;
 const DEFAULT_TACTICAL_H = 360;
 
+const MIN_MAP_H = 100;
+const MAX_MAP_H = 700;
+const DEFAULT_MAP_H = 300;
+
 export function GameLayout() {
   const { state, actions } = useGame();
   const mode = state.session?.current_mode || 'conversation';
@@ -23,6 +27,7 @@ export function GameLayout() {
 
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
   const [tacticalHeight, setTacticalHeight] = useState(DEFAULT_TACTICAL_H);
+  const [mapHeight, setMapHeight] = useState(DEFAULT_MAP_H);
 
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -32,6 +37,11 @@ export function GameLayout() {
   const vDragging = useRef(false);
   const startY = useRef(0);
   const startH = useRef(DEFAULT_TACTICAL_H);
+
+  // vertical drag state for party-hud / map split
+  const mapDragging = useRef(false);
+  const mapStartY = useRef(0);
+  const mapStartH = useRef(DEFAULT_MAP_H);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     dragging.current = true;
@@ -81,6 +91,33 @@ export function GameLayout() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }, [tacticalHeight]);
+
+  // Drag handle between party HUD and map: drag UP → map gets taller
+  const onMapHandleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    mapDragging.current = true;
+    mapStartY.current = e.clientY;
+    mapStartH.current = mapHeight;
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent) => {
+      if (!mapDragging.current) return;
+      // Dragging UP (negative delta) increases map height
+      const delta = mapStartY.current - ev.clientY;
+      const next = Math.max(MIN_MAP_H, Math.min(MAX_MAP_H, mapStartH.current + delta));
+      setMapHeight(next);
+    };
+    const onUp = () => {
+      mapDragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [mapHeight]);
 
   return (
     <div className="game-layout" style={{ '--mode-color': modeColor } as React.CSSProperties}>
@@ -153,7 +190,12 @@ export function GameLayout() {
 
         <div className="side-panel" style={{ width: sidebarWidth }}>
           <PartyHUD />
-          <MapPanel />
+          <div
+            className="map-resize-handle"
+            onMouseDown={onMapHandleMouseDown}
+            title="Drag to resize map"
+          />
+          <MapPanel height={mapHeight} />
         </div>
       </div>
 
