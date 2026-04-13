@@ -1,21 +1,28 @@
 import { gameState } from './GameStateService.js';
 import type { TacticalTile } from '@gate-life/shared';
 
-// Grid ↔ lat/lng constants (must match client MapPanel.tsx)
-const LEADVILLE_LAT = 39.2508;
-const LEADVILLE_LNG = -106.2925;
+// Grid ↔ lat/lng constants (must match client MapPanel / scenario builder)
+export const DEFAULT_GRID_ORIGIN_LAT = 39.2508;
+export const DEFAULT_GRID_ORIGIN_LNG = -106.2925;
 const GRID_DEG_LAT = 3.048 / 111195;
 const GRID_DEG_LNG = 3.048 / 86397;
 
-function gridToLatLng(gx: number, gy: number): [number, number] {
-  return [LEADVILLE_LAT + gy * GRID_DEG_LAT, LEADVILLE_LNG + gx * GRID_DEG_LNG];
+function makeGridConverters(originLat: number, originLng: number) {
+  function gridToLatLng(gx: number, gy: number): [number, number] {
+    return [originLat + gy * GRID_DEG_LAT, originLng + gx * GRID_DEG_LNG];
+  }
+  function latLngToGrid(lat: number, lng: number): [number, number] {
+    return [
+      Math.round((lng - originLng) / GRID_DEG_LNG),
+      Math.round((lat - originLat) / GRID_DEG_LAT),
+    ];
+  }
+  return { gridToLatLng, latLngToGrid };
 }
 
-function latLngToGrid(lat: number, lng: number): [number, number] {
-  return [
-    Math.round((lng - LEADVILLE_LNG) / GRID_DEG_LNG),
-    Math.round((lat - LEADVILLE_LAT) / GRID_DEG_LAT),
-  ];
+/** Shared OSM cache key — one cache bucket per scenario start point */
+function sharedTerrainCacheId(originLat: number, originLng: number): string {
+  return `__terrain_${originLat.toFixed(5)}_${originLng.toFixed(5)}`;
 }
 
 // ── Polygon rasterization (scanline fill) ────────────────────────────────────
@@ -134,28 +141,44 @@ export interface TerrainResult {
   roads: Array<{ gridLine: Array<[number, number]>; highway: string }>;
 }
 
-// Shared cache session — terrain is geographically fixed (Leadville), so
-// we reuse it across all sessions rather than re-fetching Overpass every time.
-const SHARED_TERRAIN_SESSION = '__leadville_terrain__';
-
 export async function fetchTerrain(
   sessionId: string,
   centerX: number,
   centerY: number,
   radiusGridUnits = 60,
+  originLat: number = DEFAULT_GRID_ORIGIN_LAT,
+  originLng: number = DEFAULT_GRID_ORIGIN_LNG,
 ): Promise<TerrainResult> {
-  // 1. Check this session's own cache
-  const existing = gameState.getTerrain(sessionId);
+  const { gridToLatLng, latLngToGrid } = makeGridConverters(originLat, originLng);
+  const sharedKey = sharedTerrainCacheId(originLat, originLng);
+
+  console.log(`[osm] fetchTerrain session=${sessionId.slice(0, 8)} center=(${centerX},${centerY}) origin=(${originLat},${originLng})`);
+
+  // Invalidate session tile cache if it was built with a different grid origin (or pre-origin-tracking DB rows)
+  const sessionRow = gameState.getSession(sessionId);
+  let existing = gameState.getTerrain(sessionId);
+  const storedLat = sessionRow?.terrain_origin_lat ?? null;
+  const storedLng = sessionRow?.terrain_origin_lng ?? null;
+  const originMatches =
+    storedLat != null && storedLng != null &&
+    Math.abs(storedLat - originLat) < 1e-5 && Math.abs(storedLng - originLng) < 1e-5;
+  if (existing.length > 0 && !originMatches) {
+    console.log(`[osm] Clearing stale terrain for session (stored origin ${storedLat},${storedLng} vs ${originLat},${originLng})`);
+    gameState.clearTerrain(sessionId);
+    existing = [];
+  }
+
+  // 1. Session cache (after validation)
   if (existing.length > 0) {
     return { tiles: existing, buildings: [], roads: [] };
   }
 
-  // 2. Check shared cache — reuse terrain already fetched by any prior session
-  const shared = gameState.getTerrain(SHARED_TERRAIN_SESSION);
+  // 2. Shared cache for this grid origin — reuse across sessions at the same scenario start
+  const shared = gameState.getTerrain(sharedKey);
   if (shared.length > 0) {
-    console.log(`[osm] Reusing ${shared.length} shared terrain cells for session ${sessionId.slice(0, 8)}`);
-    // Copy into this session's rows so subsequent per-session lookups hit cache too
+    console.log(`[osm] Reusing ${shared.length} shared terrain cells for origin (${originLat}, ${originLng})`);
     gameState.setTerrain(sessionId, shared);
+    gameState.updateSessionTerrainOrigin(sessionId, originLat, originLng);
     return { tiles: shared, buildings: [], roads: [] };
   }
 
@@ -247,10 +270,11 @@ export async function fetchTerrain(
 
   console.log(`[osm] Rasterized ${buildings.length} buildings, ${roads.length} roads → ${tiles.length} terrain cells`);
 
-  // Write to both this session and the shared cache so future sessions load instantly
+  // Write to both this session and the origin-scoped shared cache
   if (tiles.length > 0) {
     gameState.setTerrain(sessionId, tiles);
-    gameState.setTerrain(SHARED_TERRAIN_SESSION, tiles);
+    gameState.setTerrain(sharedKey, tiles);
+    gameState.updateSessionTerrainOrigin(sessionId, originLat, originLng);
   }
 
   return { tiles, buildings, roads };

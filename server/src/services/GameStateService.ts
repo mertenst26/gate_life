@@ -481,6 +481,23 @@ export class GameStateService {
 
   // ── Tactical Terrain ──
 
+  /** Remove all tactical tiles for a session (e.g. grid origin changed). Clears stored terrain origin. */
+  clearTerrain(sessionId: string): void {
+    const db = getDb();
+    db.prepare('DELETE FROM tactical_terrain WHERE session_id = ?').run(sessionId);
+    db.prepare(`
+      UPDATE sessions SET terrain_origin_lat = NULL, terrain_origin_lng = NULL, updated_at = ? WHERE id = ?
+    `).run(new Date().toISOString(), sessionId);
+  }
+
+  /** Record which lat/lng was used as grid (0,0) when terrain was generated. */
+  updateSessionTerrainOrigin(sessionId: string, originLat: number, originLng: number): void {
+    const db = getDb();
+    db.prepare(`
+      UPDATE sessions SET terrain_origin_lat = ?, terrain_origin_lng = ?, updated_at = ? WHERE id = ?
+    `).run(originLat, originLng, new Date().toISOString(), sessionId);
+  }
+
   setTerrain(sessionId: string, tiles: TacticalTile[]): void {
     const db = getDb();
     const stmt = db.prepare(`

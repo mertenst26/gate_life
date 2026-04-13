@@ -91,5 +91,11 @@ export function runMigrations(): void {
     console.log('[db] Migration: added combatants.party_member');
   }
 
+  if (!hasColumn('sessions', 'terrain_origin_lat')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN terrain_origin_lat REAL');
+    db.exec('ALTER TABLE sessions ADD COLUMN terrain_origin_lng REAL');
+    console.log('[db] Migration: added sessions.terrain_origin_*');
+  }
+
   console.log('[db] Schema applied successfully');
 }

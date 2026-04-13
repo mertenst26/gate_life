@@ -230,6 +230,9 @@ export interface Session {
   turn_state?: TurnState;
   spectator_user_ids: string[];
   active: boolean;
+  /** Grid origin used when tactical_terrain was last built — invalidates cache if campaign origin differs */
+  terrain_origin_lat?: number | null;
+  terrain_origin_lng?: number | null;
 }
 
 export interface TurnState {

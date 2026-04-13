@@ -478,7 +478,7 @@ export function TacticalBoard({ height }: { height?: number }) {
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
-  // ── Fetch terrain from server on mount ────────────────────────────────────
+  // ── Fetch terrain when session is available (grid origin comes from campaign on server) ──
   useEffect(() => {
     const sessionId = state.session?.id;
     if (!sessionId) return;
@@ -487,7 +487,11 @@ export function TacticalBoard({ height }: { height?: number }) {
     const cx = me?.tactical_x ?? 0;
     const cy = me?.tactical_y ?? 0;
 
+    let cancelled = false;
+    setTerrainLoaded(false);
+
     api.getTerrain(sessionId, cx, cy, 60).then(result => {
+      if (cancelled) return;
       const map = new Map<string, TerrainCell>();
       for (const tile of result.tiles) {
         map.set(cellKey(tile.x, tile.y), tile);
@@ -496,11 +500,13 @@ export function TacticalBoard({ height }: { height?: number }) {
       setTerrainLoaded(true);
       console.log(`[tactical] Loaded ${result.tiles.length} terrain cells (${result.buildings.length} buildings, ${result.roads.length} roads)`);
     }).catch(err => {
+      if (cancelled) return;
       console.error('[tactical] Failed to load terrain:', err);
-      setTerrainLoaded(true); // proceed with empty terrain
+      setTerrainLoaded(true);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    return () => { cancelled = true; };
+  }, [state.session?.id]);
 
   // ── Redraw ────────────────────────────────────────────────────────────────
   const redraw = useCallback(() => {

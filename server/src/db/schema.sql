@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   turn_state TEXT, -- JSON: { turnOrder, currentActorIndex, round, tick }
   spectator_user_ids TEXT NOT NULL DEFAULT '[]', -- JSON array
   active INTEGER NOT NULL DEFAULT 1,
+  terrain_origin_lat REAL,
+  terrain_origin_lng REAL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

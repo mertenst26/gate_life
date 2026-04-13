@@ -77,6 +77,7 @@ export function MapPanel({ height }: MapPanelProps) {
   const prevMode   = useRef(mode);
   const prevPos    = useRef<Map<string, [number, number]>>(new Map());
   const startMarkerRef = useRef<import('leaflet').CircleMarker | null>(null);
+  const lastCenteredCampaignId = useRef<string | null>(null);
 
   // Init map once — guarded against React StrictMode double-invoke via cancelled flag
   useEffect(() => {
@@ -134,6 +135,16 @@ export function MapPanel({ height }: MapPanelProps) {
     const t = setTimeout(() => mapObj.current?.invalidateSize(), 50);
     return () => clearTimeout(t);
   }, [height, loaded]);
+
+  // Snap map view to scenario grid origin when the campaign first loads (avoids stuck on default Leadville center)
+  useEffect(() => {
+    if (!mapObj.current || !loaded) return;
+    const id = state.campaign?.id;
+    if (!id) return;
+    if (lastCenteredCampaignId.current === id) return;
+    lastCenteredCampaignId.current = id;
+    mapObj.current.setView([originLat, originLng], zoomForMode(mode), { animate: false });
+  }, [loaded, state.campaign?.id, originLat, originLng, mode]);
 
   // Scenario grid origin ring at (0,0) — moves when campaign supplies grid_origin_*
   useEffect(() => {
