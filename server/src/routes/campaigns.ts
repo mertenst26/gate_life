@@ -25,6 +25,13 @@ export async function campaignRoutes(app: FastifyInstance) {
     return { campaign, session };
   });
 
+  app.delete<{ Params: { id: string } }>('/:id', async (req) => {
+    const campaign = gameState.getCampaign(req.params.id);
+    if (!campaign) return app.httpErrors.notFound('Campaign not found');
+    gameState.deleteCampaign(req.params.id);
+    return { ok: true };
+  });
+
   app.post<{ Body: { campaign_id: string; session_id: string } }>('/start-narration', async (req) => {
     const { campaign_id, session_id } = req.body;
     const campaign = gameState.getCampaign(campaign_id);

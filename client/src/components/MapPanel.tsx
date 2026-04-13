@@ -96,19 +96,20 @@ export function MapPanel() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapsed]);
 
-  // Re-center on mode change
+  // Re-center when mode changes (entering/leaving tactical)
   useEffect(() => {
     if (!mapObj.current || !L || !loaded || prevMode.current === mode) return;
     prevMode.current = mode;
     const map = mapObj.current;
     const alive = state.party.filter(c => c.status !== 'dead');
-    if (alive.length === 1) {
-      map.setView(gridToLatLng(alive[0].tactical_x ?? 0, alive[0].tactical_y ?? 0), zoomForMode(mode), { animate: true });
-    } else if (alive.length > 1) {
-      const pts = alive.map(c => L!.latLng(...gridToLatLng(c.tactical_x ?? 0, c.tactical_y ?? 0)));
-      map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: zoomForMode(mode), animate: true });
-    } else {
-      map.setZoom(zoomForMode(mode));
+    // Only zoom-to-fit when entering tactical — respect user zoom in other modes
+    if (mode === 'tactical') {
+      if (alive.length === 1) {
+        map.setView(gridToLatLng(alive[0].tactical_x ?? 0, alive[0].tactical_y ?? 0), zoomForMode(mode), { animate: true });
+      } else if (alive.length > 1) {
+        const pts = alive.map(c => L!.latLng(...gridToLatLng(c.tactical_x ?? 0, c.tactical_y ?? 0)));
+        map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: zoomForMode(mode), animate: true });
+      }
     }
     prevPos.current.clear();
   }, [mode, loaded, state.party]);
@@ -176,13 +177,17 @@ export function MapPanel() {
     }
 
     if (moved) {
-      const alive = state.party.filter(c => c.status !== 'dead');
-      if (alive.length > 1) {
-        const pts = alive.map(c => L!.latLng(...gridToLatLng(c.tactical_x ?? 0, c.tactical_y ?? 0)));
-        map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: zoomForMode(mode), animate: true });
-      } else {
-        map.panTo(moved, { animate: true, duration: 0.4 });
+      if (mode === 'tactical') {
+        // In tactical mode: keep all party members in view, zoom to fit
+        const alive = state.party.filter(c => c.status !== 'dead');
+        if (alive.length > 1) {
+          const pts = alive.map(c => L!.latLng(...gridToLatLng(c.tactical_x ?? 0, c.tactical_y ?? 0)));
+          map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: zoomForMode(mode), animate: true });
+        } else {
+          map.panTo(moved, { animate: true, duration: 0.4 });
+        }
       }
+      // Outside tactical: leave zoom alone — user controls it manually
     }
   }, [state.party, loaded, mode]);
 

@@ -4,7 +4,10 @@ const BASE_URL = '/api';
 
 async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
-    headers: { 'Content-Type': 'application/json', ...opts?.headers },
+    headers: {
+      ...(opts?.body != null ? { 'Content-Type': 'application/json' } : {}),
+      ...opts?.headers,
+    },
     ...opts,
   });
   if (!res.ok) {
@@ -41,6 +44,8 @@ export const api = {
   getCampaigns: () => fetchJson<unknown[]>('/campaigns'),
   createCampaign: (data: { name: string; gm_kind: string; gm_user_id?: string }) =>
     fetchJson<unknown>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
+  deleteCampaign: (id: string) =>
+    fetchJson<{ ok: boolean }>(`/campaigns/${id}`, { method: 'DELETE' }),
 
   getSession: (id: string) => fetchJson<unknown>(`/sessions/${id}`),
   getActiveSession: (campaignId: string) => fetchJson<unknown>(`/sessions/campaign/${campaignId}/active`),
@@ -51,6 +56,8 @@ export const api = {
   getCombatant: (id: string) => fetchJson<unknown>(`/combatants/${id}`),
   createCombatant: (data: { campaign_id: string; name: string; kind: string; personality_preset?: string }) =>
     fetchJson<unknown>('/combatants', { method: 'POST', body: JSON.stringify(data) }),
+  deleteCombatant: (id: string) =>
+    fetchJson<{ ok: boolean }>(`/combatants/${id}`, { method: 'DELETE' }),
   respawnAgent: (data: { campaign_id: string; name: string; personality_preset?: string }) =>
     fetchJson<unknown>('/combatants/respawn', { method: 'POST', body: JSON.stringify(data) }),
   getVitalHistory: (combatantId: string) => fetchJson<unknown[]>(`/combatants/${combatantId}/vitals/history`),
@@ -76,4 +83,39 @@ export const api = {
       buildings: Array<{ gridPoly: Array<[number, number]> }>;
       roads: Array<{ gridLine: Array<[number, number]>; highway: string }>;
     }>(`/terrain?session_id=${sessionId}&cx=${cx}&cy=${cy}&radius=${radius}`),
+
+  // ── Scenarios ──
+  getScenarios: () => fetchJson<unknown[]>('/scenarios'),
+
+  createScenario: (data: { name: string; description?: string; gm_kind: string; start_lat: number; start_lng: number }) =>
+    fetchJson<unknown>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),
+
+  getScenario: (id: string) => fetchJson<unknown>(`/scenarios/${id}`),
+
+  updateScenario: (id: string, data: Record<string, unknown>) =>
+    fetchJson<unknown>(`/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  deleteScenario: (id: string) =>
+    fetchJson<unknown>(`/scenarios/${id}`, { method: 'DELETE' }),
+
+  chatScenarioEntity: (scenarioId: string, data: { entity_type: string; lat: number; lng: number; messages: Array<{ role: string; content: string }> }) =>
+    fetchJson<{ reply: string; definition?: Record<string, unknown>; name?: string; suggestions?: Array<{ question: string; chips: string[] }> }>(
+      `/scenarios/${scenarioId}/entities/chat`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  saveScenarioEntity: (scenarioId: string, data: { entity_type: string; lat: number; lng: number; grid_x: number; grid_y: number; name: string; definition: Record<string, unknown> }) =>
+    fetchJson<unknown>(`/scenarios/${scenarioId}/entities`, { method: 'POST', body: JSON.stringify(data) }),
+
+  updateScenarioEntity: (scenarioId: string, entityId: string, data: { name?: string; definition?: Record<string, unknown>; lat?: number; lng?: number; grid_x?: number; grid_y?: number }) =>
+    fetchJson<unknown>(`/scenarios/${scenarioId}/entities/${entityId}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  deleteScenarioEntity: (scenarioId: string, entityId: string) =>
+    fetchJson<unknown>(`/scenarios/${scenarioId}/entities/${entityId}`, { method: 'DELETE' }),
+
+  launchScenario: (scenarioId: string) =>
+    fetchJson<{ campaign: unknown; session: unknown; scenario_id: string }>(
+      `/scenarios/${scenarioId}/launch`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
 };

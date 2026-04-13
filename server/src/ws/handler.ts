@@ -5,30 +5,51 @@ import { gameState } from '../services/GameStateService.js';
 import { aiGm } from '../services/AiGmService.js';
 import { parseMovement } from '../services/MovementParser.js';
 import { executeAgentTurn } from '../services/AgentTurnExecutor.js';
+import { agentChat } from '../services/AgentChatService.js';
 
 // ── Directed agent command helpers ────────────────────────────────────────────
 
 /**
  * Detects messages addressed to a named agent in the party.
- * Accepted formats: "uu - move east", "uu: move east", "uu, move east", "@uu move east"
- * Returns { agent, command } or null.
+ *
+ * Accepted patterns (all case-insensitive):
+ *   "uu - move east"         name at start + separator
+ *   "uu: how are you?"       name at start + colon
+ *   "whats up uu?"           name at end
+ *   "hey uu, what's wrong?"  hey/hi prefix
+ *   "@uu move north"         @ mention
+ *   "uu?"  "uu!"             bare name with punctuation
+ *
+ * Returns { agent, command } where command is the text stripped of the name/prefix.
  */
 function parseDirectedAgentCommand(
   content: string,
   party: Combatant[],
 ): { agent: Combatant; command: string } | null {
-  // Pattern: optional @ + name + separator + rest-of-command
-  const match = content.match(/^@?([a-zA-Z0-9 ]{1,20}?)[\s]*[-:,]\s*(.+)$/i);
-  if (!match) return null;
+  const agents = party.filter(c => c.kind === 'agent' && c.status === 'alive');
+  const text = content.trim();
 
-  const [, namePart, command] = match;
-  const targetName = namePart.trim().toLowerCase();
-  if (!targetName || !command?.trim()) return null;
+  for (const agent of agents) {
+    const n = agent.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape for regex
 
-  const agent = party.find(
-    c => c.kind === 'agent' && c.name.toLowerCase() === targetName && c.status === 'alive',
-  );
-  return agent ? { agent, command: command.trim() } : null;
+    // 1. Explicit separator at start: "uu - cmd", "uu: cmd", "uu, cmd", "@uu cmd"
+    const sepMatch = text.match(new RegExp(`^@?${n}[\\s]*[-:,]\\s*(.+)$`, 'i'));
+    if (sepMatch) return { agent, command: sepMatch[1].trim() };
+
+    // 2. Name at end: "whats up uu?", "how are you uu", "you ok uu?"
+    const endMatch = text.match(new RegExp(`^(.+?)\\s+${n}[?!.,]*$`, 'i'));
+    if (endMatch) return { agent, command: endMatch[1].trim() };
+
+    // 3. Hey/hi prefix: "hey uu what's wrong?", "hi uu, you alright?"
+    const heyMatch = text.match(new RegExp(`^(?:hey|hi|yo|ok)\\s+${n}[,\\s]+(.+)$`, 'i'));
+    if (heyMatch) return { agent, command: heyMatch[1].trim() };
+
+    // 4. Bare name: "uu?" or "uu!" — treat as a status check
+    const bareMatch = text.match(new RegExp(`^@?${n}[?!.]*$`, 'i'));
+    if (bareMatch) return { agent, command: 'What\'s your status?' };
+  }
+
+  return null;
 }
 
 
@@ -83,30 +104,71 @@ async function triggerAgentTurnIfNeeded(sessionId: string, campaignId: string): 
 }
 
 /**
- * Queue a directed command and immediately acknowledge it in chat.
- * The actual execution happens in executeAgentTurn when it is the agent's turn.
+ * Handle a directed message to an agent.
+ *
+ * Tactical mode:
+ *   - Movement/action command → queue for their turn + canned ack
+ *   - Conversation → LLM in-character reply
+ *
+ * Outside tactical (conversation, travel, rest):
+ *   - Always go to LLM for a conversational reply
+ *   - If the command also contains movement, execute it immediately on the world map
  */
-function queueDirectedAgentCommand(
+function handleDirectedAgentMessage(
   agent: Combatant,
   command: string,
+  playerMessage: { actor_id?: string; content: string; message_type: string },
   sessionId: string,
   campaignId: string,
 ): void {
-  const bcast = (msg: WSMessage) => broadcastToSession(sessionId, msg);
+  const session = gameState.getSession(sessionId);
+  const isTactical = session?.current_mode === 'tactical';
+  const movement = parseMovement(command, agent.attributes.spd_bipedal, agent.attributes.spd_quadruped, false);
 
-  pendingAgentOrders.set(agent.id, command);
-  console.log(`[directed] queued order for ${agent.name}: "${command}"`);
+  if (isTactical && movement) {
+    // Tactical mode + movement order → queue for their turn, canned ack
+    pendingAgentOrders.set(agent.id, command);
+    console.log(`[directed] queued tactical movement for ${agent.name}: "${command}"`);
 
-  // Immediate acknowledgment in chat
-  const ack = gameState.createMessage({
+    const bcast = (msg: WSMessage) => broadcastToSession(sessionId, msg);
+    const ack = gameState.createMessage({
+      campaign_id: campaignId,
+      session_id: sessionId,
+      actor_id: agent.id,
+      message_type: 'npc_dialog',
+      content: buildAck(agent, command),
+      visibility: 'party',
+    });
+    bcast({ type: 'chat_message', payload: ack, timestamp: new Date().toISOString() });
+    return;
+  }
+
+  // Outside tactical (or no movement detected): conversational LLM reply
+  console.log(`[directed] conversational message to ${agent.name}: "${command}"`);
+
+  // Also execute any movement immediately when outside tactical mode
+  if (!isTactical && movement) {
+    const curX = agent.tactical_x ?? 0;
+    const curY = agent.tactical_y ?? 0;
+    const newX = curX + movement.dx;
+    const newY = curY + movement.dy;
+    const updated = gameState.updateCombatantPosition(agent.id, newX, newY, movement.direction_label);
+    if (updated) {
+      broadcastToSession(sessionId, { type: 'combatant_update', payload: updated, timestamp: new Date().toISOString() });
+      console.log(`[directed] ${agent.name} moved immediately → (${newX},${newY})`);
+    }
+  }
+
+  const fullMsg = {
+    ...playerMessage,
+    id: '',
     campaign_id: campaignId,
     session_id: sessionId,
-    actor_id: agent.id,
-    message_type: 'npc_dialog',
-    content: buildAck(agent, command),
-    visibility: 'party',
-  });
-  bcast({ type: 'chat_message', payload: ack, timestamp: new Date().toISOString() });
+    timestamp: new Date().toISOString(),
+    visibility: 'party' as const,
+  };
+  agentChat.respondToDirectMessage(agent, fullMsg as any, sessionId, campaignId)
+    .catch(err => console.error(`[agentChat] ${agent.name} error:`, err));
 }
 
 function buildAck(agent: Combatant, rawCommand: string): string {
@@ -259,7 +321,13 @@ function handleClientMessage(clientId: string, client: ConnectedClient, msg: any
         const party = gameState.getPartyCombatants(session.campaign_id);
         const directed = parseDirectedAgentCommand(content, party);
         if (directed) {
-          queueDirectedAgentCommand(directed.agent, directed.command, client.sessionId, session.campaign_id);
+          handleDirectedAgentMessage(
+            directed.agent,
+            directed.command,
+            { actor_id: actorId ?? undefined, content, message_type: chatMsg.message_type },
+            client.sessionId,
+            session.campaign_id,
+          );
           break; // done — skip movement parser and AI GM
         }
       }

@@ -79,4 +79,11 @@ export async function combatantRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>('/:id/vitals/history', async (req) => {
     return gameState.getVitalSamples(req.params.id);
   });
+
+  app.delete<{ Params: { id: string } }>('/:id', async (req) => {
+    const combatant = gameState.getCombatant(req.params.id);
+    if (!combatant) return app.httpErrors.notFound('Combatant not found');
+    gameState.deleteCombatant(req.params.id);
+    return { ok: true };
+  });
 }

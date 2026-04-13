@@ -36,11 +36,14 @@ function MessageBubble({ msg, party }: { msg: ChatMessage; party: Combatant[] })
   );
 }
 
-function GmThinkingBubble() {
+function ThinkingBubble({ name, isAgent }: { name: string; isAgent?: boolean }) {
   return (
-    <div className="chat-message msg-narration gm-thinking-bubble fade-in">
+    <div className={`chat-message ${isAgent ? 'msg-npc' : 'msg-narration'} gm-thinking-bubble fade-in`}>
       <div className="msg-header">
-        <span className="msg-actor">GM</span>
+        <span className="msg-actor">
+          {name}
+          {isAgent && <span className="agent-badge">AI</span>}
+        </span>
       </div>
       <div className="msg-content gm-thinking-dots">
         <span /><span /><span />
@@ -63,7 +66,7 @@ export function ChatPanel() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [state.messages, state.gmThinking]);
+  }, [state.messages, state.gmThinking, state.agentThinkingId]);
 
   const handleSend = () => {
     if (!input.trim() || !canChat) return;
@@ -84,12 +87,16 @@ export function ChatPanel() {
         {state.messages.map((msg) => (
           <MessageBubble key={msg.id} msg={msg} party={state.party} />
         ))}
-        {state.messages.length === 0 && !state.gmThinking && (
+        {state.messages.length === 0 && !state.gmThinking && !state.agentThinkingId && (
           <div className="chat-empty text-dim text-sm">
             The adventure begins...
           </div>
         )}
-        {state.gmThinking && <GmThinkingBubble />}
+        {state.gmThinking && <ThinkingBubble name="GM" />}
+        {state.agentThinkingId && (() => {
+          const agent = state.party.find(c => c.id === state.agentThinkingId);
+          return agent ? <ThinkingBubble name={agent.name} isAgent /> : null;
+        })()}
       </div>
       <div className="chat-input-area">
         {!canChat && mode === 'tactical' && (

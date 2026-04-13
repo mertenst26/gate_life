@@ -11,6 +11,7 @@ import { messageRoutes } from './routes/messages.js';
 import { actionRoutes } from './routes/actions.js';
 import { stateRoutes } from './routes/state.js';
 import { terrainRoutes } from './routes/terrain.js';
+import { scenarioRoutes } from './routes/scenarios.js';
 import { wsHandler } from './ws/handler.js';
 import { loadTemplates } from './services/ClassTemplateService.js';
 
@@ -34,6 +35,7 @@ async function main() {
   app.register(actionRoutes, { prefix: '/api/actions' });
   app.register(stateRoutes, { prefix: '/api/state' });
   app.register(terrainRoutes, { prefix: '/api/terrain' });
+  app.register(scenarioRoutes, { prefix: '/api/scenarios' });
 
   // WebSocket
   app.register(wsHandler);

@@ -43,6 +43,11 @@ export class GameStateService {
     }));
   }
 
+  deleteCampaign(id: string): void {
+    const db = getDb();
+    db.prepare('DELETE FROM campaigns WHERE id = ?').run(id);
+  }
+
   updateWorldClock(campaignId: string, clock: WorldClock): void {
     const db = getDb();
     db.prepare('UPDATE campaigns SET world_clock = ?, updated_at = ? WHERE id = ?')
@@ -179,6 +184,11 @@ export class GameStateService {
     const row = db.prepare('SELECT * FROM combatants WHERE id = ?').get(id) as any;
     if (!row) return null;
     return this.rowToCombatant(row);
+  }
+
+  deleteCombatant(id: string): void {
+    const db = getDb();
+    db.prepare('DELETE FROM combatants WHERE id = ?').run(id);
   }
 
   getPartyCombatants(campaignId: string): Combatant[] {

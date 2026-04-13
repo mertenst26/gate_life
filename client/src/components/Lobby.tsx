@@ -2,9 +2,17 @@ import { useState, useEffect } from 'react';
 import { api } from '../hooks/useApi';
 import { useGame } from '../context/GameContext';
 
-export function Lobby({ onStartGame }: { onStartGame: () => void }) {
+interface LobbyProps {
+  onStartGame: () => void;
+  onBuildScenario: () => void;
+  onEditScenario: (id: string) => void;
+}
+
+export function Lobby({ onStartGame, onBuildScenario, onEditScenario }: LobbyProps) {
   const { state, dispatch, actions } = useGame();
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [scenarios, setScenarios] = useState<any[]>([]);
+  const [campaignParty, setCampaignParty] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
   const [campaignName, setCampaignName] = useState('');
   const [gmKind, setGmKind] = useState<'human' | 'agent'>('agent');
@@ -12,9 +20,12 @@ export function Lobby({ onStartGame }: { onStartGame: () => void }) {
   const [role, setRole] = useState<'gm' | 'player' | 'spectator'>('player');
   const [step, setStep] = useState<'campaigns' | 'join' | 'create_character'>('campaigns');
   const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
+  // Track which item is pending removal confirmation (by id)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     api.getCampaigns().then(setCampaigns).catch(() => {});
+    api.getScenarios().then(setScenarios).catch(() => {});
   }, []);
 
   const handleCreateCampaign = async () => {
@@ -37,7 +48,15 @@ export function Lobby({ onStartGame }: { onStartGame: () => void }) {
     setSelectedCampaign(campaign);
     dispatch({ type: 'SET_USER', payload: { userId: state.userId, role } });
     await actions.loadCampaign(campaign.id);
+    const party = await api.getParty(campaign.id).catch(() => []) as any[];
+    setCampaignParty(party);
     setStep('join');
+  };
+
+  const handleDeleteCharacter = async (id: string) => {
+    await api.deleteCombatant(id).catch(() => {});
+    setCampaignParty(prev => prev.filter(c => c.id !== id));
+    setConfirmDeleteId(null);
   };
 
   const handleCreateCharacter = async () => {
@@ -71,6 +90,28 @@ export function Lobby({ onStartGame }: { onStartGame: () => void }) {
     onStartGame();
   };
 
+  const handleLaunchScenario = async (scenario: any) => {
+    const result = await api.launchScenario(scenario.id) as any;
+    if (result?.campaign && result?.session) {
+      setSelectedCampaign(result.campaign);
+      dispatch({ type: 'SET_CAMPAIGN', payload: result.campaign });
+      dispatch({ type: 'SET_SESSION', payload: result.session });
+      setStep('create_character');
+    }
+  };
+
+  const handleDeleteCampaign = async (id: string) => {
+    await api.deleteCampaign(id).catch(() => {});
+    setCampaigns(prev => prev.filter(c => c.id !== id));
+    setConfirmDeleteId(null);
+  };
+
+  const handleDeleteScenario = async (id: string) => {
+    await api.deleteScenario(id).catch(() => {});
+    setScenarios(prev => prev.filter(s => s.id !== id));
+    setConfirmDeleteId(null);
+  };
+
   return (
     <div className="lobby fade-in">
       {step === 'campaigns' && (
@@ -86,6 +127,9 @@ export function Lobby({ onStartGame }: { onStartGame: () => void }) {
               <button className="btn btn-primary" onClick={() => setCreating(true)}>
                 New Campaign
               </button>
+              <button className="btn" onClick={onBuildScenario}>
+                New Scenario
+              </button>
               <div className="role-selector">
                 <label className="text-xs text-dim">Join as:</label>
                 <select value={role} onChange={(e) => setRole(e.target.value as any)}>
@@ -96,13 +140,73 @@ export function Lobby({ onStartGame }: { onStartGame: () => void }) {
               </div>
             </div>
 
+            {scenarios.length > 0 && (
+              <div className="scenario-list">
+                <h3 className="text-sm">Scenarios</h3>
+                {scenarios.map(s => (
+                  <div key={s.id} className="scenario-card panel">
+                    <div
+                      className="scenario-card-info scenario-card-info-clickable"
+                      onClick={() => onEditScenario(s.id)}
+                      title="Click to edit this scenario"
+                    >
+                      <span className="scenario-card-name">{s.name}</span>
+                      {s.description && <span className="text-xs text-dim"> — {s.description}</span>}
+                      <span className="text-xs text-dim scenario-edit-hint">Edit</span>
+                    </div>
+                    <div className="scenario-card-actions">
+                      {confirmDeleteId === s.id ? (
+                        <>
+                          <span className="text-xs text-secondary">Remove?</span>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleDeleteScenario(s.id)}>
+                            Yes
+                          </button>
+                          <button className="btn btn-sm" onClick={() => setConfirmDeleteId(null)}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="btn btn-sm btn-primary" onClick={() => handleLaunchScenario(s)}>
+                            Launch
+                          </button>
+                          <button className="btn btn-sm btn-danger" onClick={() => setConfirmDeleteId(s.id)}>
+                            Remove
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {campaigns.length > 0 && (
               <div className="campaign-list">
                 <h3 className="text-sm">Existing Campaigns</h3>
                 {campaigns.map(c => (
-                  <div key={c.id} className="campaign-card panel" onClick={() => handleJoinCampaign(c)}>
-                    <span className="campaign-card-name">{c.name}</span>
-                    <span className="text-xs text-dim">GM: {c.gm_kind}</span>
+                  <div key={c.id} className="campaign-card panel">
+                    <div className="campaign-card-info" onClick={() => handleJoinCampaign(c)}>
+                      <span className="campaign-card-name">{c.name}</span>
+                      <span className="text-xs text-dim">GM: {c.gm_kind}</span>
+                    </div>
+                    <div className="campaign-card-actions">
+                      {confirmDeleteId === c.id ? (
+                        <>
+                          <span className="text-xs text-secondary">Remove?</span>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCampaign(c.id)}>
+                            Yes
+                          </button>
+                          <button className="btn btn-sm" onClick={() => setConfirmDeleteId(null)}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button className="btn btn-sm btn-danger" onClick={() => setConfirmDeleteId(c.id)}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -137,19 +241,40 @@ export function Lobby({ onStartGame }: { onStartGame: () => void }) {
       {step === 'join' && selectedCampaign && (
         <div className="join-screen fade-in">
           <h2>Join: {selectedCampaign.name}</h2>
-          {state.party.length > 0 ? (
-            <div>
-              <p className="text-sm text-secondary">Party already has members. Join existing session?</p>
-              <div className="dialog-actions">
-                <button className="btn btn-primary" onClick={handleJoinExisting}>Join Game</button>
-                <button className="btn" onClick={handleJoinAsSpectator}>Watch as Spectator</button>
-              </div>
+
+          {campaignParty.length > 0 && (
+            <div className="party-roster">
+              <h4 className="text-sm text-dim">Characters</h4>
+              {campaignParty.map((c: any) => (
+                <div key={c.id} className="party-roster-row">
+                  <span className="party-roster-name">{c.name}</span>
+                  <span className="text-xs text-dim">{c.kind}</span>
+                  {confirmDeleteId === c.id ? (
+                    <>
+                      <span className="text-xs text-secondary">Remove?</span>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCharacter(c.id)}>Yes</button>
+                      <button className="btn btn-sm" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <button className="btn btn-sm btn-danger" onClick={() => setConfirmDeleteId(c.id)}>Remove</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {campaignParty.length > 0 ? (
+            <div className="dialog-actions">
+              <button className="btn btn-primary" onClick={handleJoinExisting}>Join Game</button>
+              <button className="btn" onClick={handleJoinAsSpectator}>Watch as Spectator</button>
             </div>
           ) : (
             <div>
               <p className="text-sm text-secondary">Create your character to join.</p>
-              <button className="btn btn-primary" onClick={() => setStep('create_character')}>Create Character</button>
-              <button className="btn" onClick={handleJoinAsSpectator}>Watch as Spectator</button>
+              <div className="dialog-actions">
+                <button className="btn btn-primary" onClick={() => setStep('create_character')}>Create Character</button>
+                <button className="btn" onClick={handleJoinAsSpectator}>Watch as Spectator</button>
+              </div>
             </div>
           )}
         </div>

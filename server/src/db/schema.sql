@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
   gm_user_id TEXT,
   gm_agent_config TEXT, -- JSON
   world_clock TEXT NOT NULL DEFAULT '{"day":1,"hour":8,"minute":0}', -- JSON
+  deleted_at TEXT, -- soft delete timestamp; NULL = active
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -210,6 +211,33 @@ CREATE TABLE IF NOT EXISTS loot_items (
   rarity TEXT NOT NULL DEFAULT 'common' CHECK (rarity IN ('common','uncommon','rare','legendary','artifact'))
 );
 
+-- Scenarios (reusable templates for launching campaigns)
+CREATE TABLE IF NOT EXISTS scenarios (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  creator_user_id TEXT NOT NULL,
+  gm_kind TEXT NOT NULL CHECK (gm_kind IN ('human', 'agent')),
+  start_lat REAL NOT NULL DEFAULT 39.2508,
+  start_lng REAL NOT NULL DEFAULT -106.2925,
+  deleted_at TEXT, -- soft delete timestamp; NULL = active
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Scenario entities (pre-placed enemies and NPCs on the map)
+CREATE TABLE IF NOT EXISTS scenario_entities (
+  id TEXT PRIMARY KEY,
+  scenario_id TEXT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('enemy', 'npc')),
+  grid_x INTEGER NOT NULL DEFAULT 0,
+  grid_y INTEGER NOT NULL DEFAULT 0,
+  lat REAL NOT NULL,
+  lng REAL NOT NULL,
+  name TEXT NOT NULL,
+  definition TEXT NOT NULL DEFAULT '{}', -- JSON: full stat block
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indices
 CREATE INDEX IF NOT EXISTS idx_combatants_campaign ON combatants(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_game_events_campaign ON game_events(campaign_id);
@@ -220,3 +248,4 @@ CREATE INDEX IF NOT EXISTS idx_vital_samples_combatant ON vital_samples(combatan
 CREATE INDEX IF NOT EXISTS idx_injuries_combatant ON injuries(combatant_id);
 CREATE INDEX IF NOT EXISTS idx_enemies_session ON enemies(session_id);
 CREATE INDEX IF NOT EXISTS idx_tactical_terrain_session ON tactical_terrain(session_id);
+CREATE INDEX IF NOT EXISTS idx_scenario_entities_scenario ON scenario_entities(scenario_id);

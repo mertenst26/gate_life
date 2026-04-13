@@ -290,6 +290,7 @@ export type WSMessageType =
   | 'tactical_move'
   | 'end_turn'
   | 'gm_thinking'
+  | 'agent_thinking'
   | 'error';
 
 export interface WSMessage {
@@ -329,4 +330,59 @@ export interface SendMessageRequest {
   message_type: MessageType;
   content: string;
   visibility?: Visibility;
+}
+
+// ── Scenario Builder ──
+
+export type ScenarioEntityType = 'enemy' | 'npc';
+
+export interface Scenario {
+  id: string;
+  name: string;
+  description?: string;
+  creator_user_id: string;
+  gm_kind: GmKind;
+  start_lat: number;
+  start_lng: number;
+  created_at: string;
+}
+
+export interface ScenarioEntity {
+  id: string;
+  scenario_id: string;
+  entity_type: ScenarioEntityType;
+  grid_x: number;
+  grid_y: number;
+  lat: number;
+  lng: number;
+  name: string;
+  definition: Record<string, unknown>;
+}
+
+export interface CreateScenarioRequest {
+  name: string;
+  description?: string;
+  gm_kind: GmKind;
+  start_lat: number;
+  start_lng: number;
+}
+
+export interface EntityChatRequest {
+  entity_type: ScenarioEntityType;
+  lat: number;
+  lng: number;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+}
+
+export interface SuggestionGroup {
+  /** Short label matching the question topic, e.g. "Setting" or "Difficulty" */
+  question: string;
+  chips: string[];
+}
+
+export interface EntityChatResponse {
+  reply: string;
+  definition?: Record<string, unknown>;
+  name?: string;
+  suggestions?: SuggestionGroup[];
 }

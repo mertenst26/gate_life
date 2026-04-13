@@ -29,6 +29,7 @@ interface GameState {
   myCharacterId: string | null;
   connected: boolean;
   gmThinking: boolean;
+  agentThinkingId: string | null; // combatant ID of agent currently generating a response
 }
 
 type GameAction =
@@ -45,6 +46,7 @@ type GameAction =
   | { type: 'SET_MY_CHARACTER'; payload: string }
   | { type: 'SET_CONNECTED'; payload: boolean }
   | { type: 'SET_GM_THINKING'; payload: boolean }
+  | { type: 'SET_AGENT_THINKING'; payload: string | null }
   | { type: 'SET_USER'; payload: { userId: string; role: 'gm' | 'player' | 'spectator' } };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -87,6 +89,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, connected: action.payload };
     case 'SET_GM_THINKING':
       return { ...state, gmThinking: action.payload };
+    case 'SET_AGENT_THINKING':
+      return { ...state, agentThinkingId: action.payload };
     case 'SET_USER':
       return { ...state, userId: action.payload.userId, role: action.payload.role };
     default:
@@ -106,6 +110,7 @@ const initialState: GameState = {
   myCharacterId: sessionStorage.getItem(STORAGE_KEY_CHAR) ?? null,
   connected: false,
   gmThinking: false,
+  agentThinkingId: null,
 };
 
 interface GameContextType {
@@ -190,6 +195,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     unsubs.push(ws.subscribe('gm_thinking', (msg) => {
       const { thinking } = msg.payload as { thinking: boolean };
       dispatch({ type: 'SET_GM_THINKING', payload: thinking });
+    }));
+
+    unsubs.push(ws.subscribe('agent_thinking', (msg) => {
+      const { actor_id, thinking } = msg.payload as { actor_id: string; thinking: boolean };
+      dispatch({ type: 'SET_AGENT_THINKING', payload: thinking ? actor_id : null });
     }));
 
     return () => unsubs.forEach(fn => fn());
