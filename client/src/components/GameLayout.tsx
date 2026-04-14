@@ -1,12 +1,13 @@
-import { useGame } from '../context/GameContext';
-import { useRef, useCallback, useState } from 'react';
-import { TurnTracker } from './TurnTracker';
-import { ChatPanel } from './ChatPanel';
-import { PartyHUD } from './PartyHUD';
-import { MapPanel } from './MapPanel';
-import { ContextActionBar } from './ContextActionBar';
-import { TacticalBoard } from './TacticalBoard';
-import { MODE_COLORS } from '@gate-life/shared';
+import { MODE_COLORS } from "@gate-life/shared";
+import { useCallback, useRef, useState } from "react";
+import { useGame } from "../context/GameContext";
+import { ChatPanel } from "./ChatPanel";
+import { ContextActionBar } from "./ContextActionBar";
+import { DiceRollWidget } from "./DiceRollWidget";
+import { MapPanel } from "./MapPanel";
+import { PartyHUD } from "./PartyHUD";
+import { TacticalBoard } from "./TacticalBoard";
+import { TurnTracker } from "./TurnTracker";
 
 const MIN_SIDEBAR = 220;
 const MAX_SIDEBAR = 600;
@@ -21,185 +22,240 @@ const MAX_MAP_H = 700;
 const DEFAULT_MAP_H = 300;
 
 export function GameLayout() {
-  const { state, actions } = useGame();
-  const mode = state.session?.current_mode || 'conversation';
-  const modeColor = MODE_COLORS[mode] || MODE_COLORS.conversation;
+	const { state, actions, dispatch } = useGame();
+	const mode = state.session?.current_mode || "conversation";
+	const modeColor = MODE_COLORS[mode] || MODE_COLORS.conversation;
 
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
-  const [tacticalHeight, setTacticalHeight] = useState(DEFAULT_TACTICAL_H);
-  const [mapHeight, setMapHeight] = useState(DEFAULT_MAP_H);
+	const currentRoll = state.diceRollQueue[0] ?? null;
+	const dismissRoll = useCallback(
+		() => dispatch({ type: "DEQUEUE_DICE_ROLL" }),
+		[dispatch],
+	);
 
-  const dragging = useRef(false);
-  const startX = useRef(0);
-  const startW = useRef(DEFAULT_SIDEBAR);
+	const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
+	const [tacticalHeight, setTacticalHeight] = useState(DEFAULT_TACTICAL_H);
+	const [mapHeight, setMapHeight] = useState(DEFAULT_MAP_H);
 
-  // vertical drag state for tactical/chat split
-  const vDragging = useRef(false);
-  const startY = useRef(0);
-  const startH = useRef(DEFAULT_TACTICAL_H);
+	const dragging = useRef(false);
+	const startX = useRef(0);
+	const startW = useRef(DEFAULT_SIDEBAR);
 
-  // vertical drag state for party-hud / map split
-  const mapDragging = useRef(false);
-  const mapStartY = useRef(0);
-  const mapStartH = useRef(DEFAULT_MAP_H);
+	// vertical drag state for tactical/chat split
+	const vDragging = useRef(false);
+	const startY = useRef(0);
+	const startH = useRef(DEFAULT_TACTICAL_H);
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    dragging.current = true;
-    startX.current = e.clientX;
-    startW.current = sidebarWidth;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+	// vertical drag state for party-hud / map split
+	const mapDragging = useRef(false);
+	const mapStartY = useRef(0);
+	const mapStartH = useRef(DEFAULT_MAP_H);
 
-    const onMove = (ev: MouseEvent) => {
-      if (!dragging.current) return;
-      const delta = startX.current - ev.clientX;
-      const next = Math.max(MIN_SIDEBAR, Math.min(MAX_SIDEBAR, startW.current + delta));
-      setSidebarWidth(next);
-    };
-    const onUp = () => {
-      dragging.current = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [sidebarWidth]);
+	const onMouseDown = useCallback(
+		(e: React.MouseEvent) => {
+			dragging.current = true;
+			startX.current = e.clientX;
+			startW.current = sidebarWidth;
+			document.body.style.cursor = "col-resize";
+			document.body.style.userSelect = "none";
 
-  const onVMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    vDragging.current = true;
-    startY.current = e.clientY;
-    startH.current = tacticalHeight;
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
+			const onMove = (ev: MouseEvent) => {
+				if (!dragging.current) return;
+				const delta = startX.current - ev.clientX;
+				const next = Math.max(
+					MIN_SIDEBAR,
+					Math.min(MAX_SIDEBAR, startW.current + delta),
+				);
+				setSidebarWidth(next);
+			};
+			const onUp = () => {
+				dragging.current = false;
+				document.body.style.cursor = "";
+				document.body.style.userSelect = "";
+				window.removeEventListener("mousemove", onMove);
+				window.removeEventListener("mouseup", onUp);
+			};
+			window.addEventListener("mousemove", onMove);
+			window.addEventListener("mouseup", onUp);
+		},
+		[sidebarWidth],
+	);
 
-    const onMove = (ev: MouseEvent) => {
-      if (!vDragging.current) return;
-      const delta = ev.clientY - startY.current;
-      const next = Math.max(MIN_TACTICAL_H, Math.min(MAX_TACTICAL_H, startH.current + delta));
-      setTacticalHeight(next);
-    };
-    const onUp = () => {
-      vDragging.current = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [tacticalHeight]);
+	const onVMouseDown = useCallback(
+		(e: React.MouseEvent) => {
+			e.preventDefault();
+			vDragging.current = true;
+			startY.current = e.clientY;
+			startH.current = tacticalHeight;
+			document.body.style.cursor = "row-resize";
+			document.body.style.userSelect = "none";
 
-  // Drag handle between party HUD and map: drag UP → map gets taller
-  const onMapHandleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    mapDragging.current = true;
-    mapStartY.current = e.clientY;
-    mapStartH.current = mapHeight;
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
+			const onMove = (ev: MouseEvent) => {
+				if (!vDragging.current) return;
+				const delta = ev.clientY - startY.current;
+				const next = Math.max(
+					MIN_TACTICAL_H,
+					Math.min(MAX_TACTICAL_H, startH.current + delta),
+				);
+				setTacticalHeight(next);
+			};
+			const onUp = () => {
+				vDragging.current = false;
+				document.body.style.cursor = "";
+				document.body.style.userSelect = "";
+				window.removeEventListener("mousemove", onMove);
+				window.removeEventListener("mouseup", onUp);
+			};
+			window.addEventListener("mousemove", onMove);
+			window.addEventListener("mouseup", onUp);
+		},
+		[tacticalHeight],
+	);
 
-    const onMove = (ev: MouseEvent) => {
-      if (!mapDragging.current) return;
-      // Dragging UP (negative delta) increases map height
-      const delta = mapStartY.current - ev.clientY;
-      const next = Math.max(MIN_MAP_H, Math.min(MAX_MAP_H, mapStartH.current + delta));
-      setMapHeight(next);
-    };
-    const onUp = () => {
-      mapDragging.current = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [mapHeight]);
+	// Drag handle between party HUD and map: drag UP → map gets taller
+	const onMapHandleMouseDown = useCallback(
+		(e: React.MouseEvent) => {
+			e.preventDefault();
+			mapDragging.current = true;
+			mapStartY.current = e.clientY;
+			mapStartH.current = mapHeight;
+			document.body.style.cursor = "row-resize";
+			document.body.style.userSelect = "none";
 
-  return (
-    <div className="game-layout" style={{ '--mode-color': modeColor } as React.CSSProperties}>
-      <header className="game-header">
-        <div className="header-left">
-          <h1 className="app-title">GATE<span className="accent">LIFE</span></h1>
-          {state.campaign && (
-            <span className="campaign-name">{state.campaign.name}</span>
-          )}
-        </div>
-        <div className="header-center">
-          {state.session && (
-            <span className="mode-badge" style={{ borderColor: modeColor, color: modeColor }}>
-              {mode.toUpperCase()}
-            </span>
-          )}
-          {state.campaign?.world_clock && (
-            <span className="world-clock mono">
-              Day {state.campaign.world_clock.day} &middot; {String(Math.floor(state.campaign.world_clock.hour)).padStart(2, '0')}:{String(Math.floor(state.campaign.world_clock.minute)).padStart(2, '0')}
-            </span>
-          )}
-        </div>
-        <div className="header-right">
-          {state.session && state.role !== 'spectator' && (
-            mode === 'tactical'
-              ? (
-                <button
-                  className="btn mode-btn mode-btn-exit"
-                  onClick={() => actions.changeMode('conversation')}
-                  title="Exit tactical combat"
-                >
-                  ✕ EXIT TACTICAL MODE
-                </button>
-              )
-              : (
-                <button
-                  className="btn mode-btn mode-btn-tactical"
-                  onClick={() => actions.changeMode('tactical')}
-                  title="Enter turn-based tactical mode"
-                >
-                  ⚔ TACTICAL MODE
-                </button>
-              )
-          )}
-          <span className={`connection-dot ${state.connected ? 'online' : 'offline'}`} />
-          <span className="text-xs text-dim">{state.connected ? 'Connected' : 'Disconnected'}</span>
-        </div>
-      </header>
+			const onMove = (ev: MouseEvent) => {
+				if (!mapDragging.current) return;
+				// Dragging UP (negative delta) increases map height
+				const delta = mapStartY.current - ev.clientY;
+				const next = Math.max(
+					MIN_MAP_H,
+					Math.min(MAX_MAP_H, mapStartH.current + delta),
+				);
+				setMapHeight(next);
+			};
+			const onUp = () => {
+				mapDragging.current = false;
+				document.body.style.cursor = "";
+				document.body.style.userSelect = "";
+				window.removeEventListener("mousemove", onMove);
+				window.removeEventListener("mouseup", onUp);
+			};
+			window.addEventListener("mousemove", onMove);
+			window.addEventListener("mouseup", onUp);
+		},
+		[mapHeight],
+	);
 
-      {mode === 'tactical' && state.session?.turn_state && (
-        <TurnTracker />
-      )}
+	return (
+		<div
+			className="game-layout"
+			style={{ "--mode-color": modeColor } as React.CSSProperties}
+		>
+			<header className="game-header">
+				<div className="header-left">
+					<h1 className="app-title">
+						GATE<span className="accent">LIFE</span>
+					</h1>
+					{state.campaign && (
+						<span className="campaign-name">{state.campaign.name}</span>
+					)}
+				</div>
+				<div className="header-center">
+					{state.session && (
+						<span
+							className="mode-badge"
+							style={{ borderColor: modeColor, color: modeColor }}
+						>
+							{mode.toUpperCase()}
+						</span>
+					)}
+					{state.campaign?.world_clock && (
+						<span className="world-clock mono">
+							Day {state.campaign.world_clock.day} &middot;{" "}
+							{String(Math.floor(state.campaign.world_clock.hour)).padStart(
+								2,
+								"0",
+							)}
+							:
+							{String(Math.floor(state.campaign.world_clock.minute)).padStart(
+								2,
+								"0",
+							)}
+						</span>
+					)}
+				</div>
+				<div className="header-right">
+					{state.session &&
+						state.role !== "spectator" &&
+						(mode === "tactical" ? (
+							<button
+								className="btn mode-btn mode-btn-exit"
+								onClick={() => actions.changeMode("conversation")}
+								title="Exit tactical combat"
+							>
+								✕ EXIT TACTICAL MODE
+							</button>
+						) : (
+							<button
+								className="btn mode-btn mode-btn-tactical"
+								onClick={() => actions.changeMode("tactical")}
+								title="Enter turn-based tactical mode"
+							>
+								⚔ TACTICAL MODE
+							</button>
+						))}
+					<span
+						className={`connection-dot ${state.connected ? "online" : "offline"}`}
+					/>
+					<span className="text-xs text-dim">
+						{state.connected ? "Connected" : "Disconnected"}
+					</span>
+				</div>
+			</header>
 
-      <div className="game-content">
-        <div className={`main-panel ${mode === 'tactical' ? 'with-tactical' : ''}`}>
-          {mode === 'tactical' && (
-            <>
-              <TacticalBoard height={tacticalHeight} />
-              <div
-                className="tactical-chat-resize-handle"
-                onMouseDown={onVMouseDown}
-                title="Drag to resize"
-              />
-            </>
-          )}
-          <ChatPanel />
-        </div>
+			{mode === "tactical" && state.session?.turn_state && <TurnTracker />}
 
-        <div className="sidebar-resize-handle" onMouseDown={onMouseDown} title="Drag to resize" />
+			<div className="game-content">
+				<div
+					className={`main-panel ${mode === "tactical" ? "with-tactical" : ""}`}
+				>
+					{mode === "tactical" && (
+						<>
+							<TacticalBoard height={tacticalHeight} />
+							<div
+								className="tactical-chat-resize-handle"
+								onMouseDown={onVMouseDown}
+								title="Drag to resize"
+							/>
+						</>
+					)}
+					<ChatPanel />
+				</div>
 
-        <div className="side-panel" style={{ width: sidebarWidth }}>
-          <PartyHUD />
-          <div
-            className="map-resize-handle"
-            onMouseDown={onMapHandleMouseDown}
-            title="Drag to resize map"
-          />
-          <MapPanel height={mapHeight} />
-        </div>
-      </div>
+				<div
+					className="sidebar-resize-handle"
+					onMouseDown={onMouseDown}
+					title="Drag to resize"
+				/>
 
-      {/* ContextActionBar hidden — actions handled via chat and tactical grid */}
-    </div>
-  );
+				<div className="side-panel" style={{ width: sidebarWidth }}>
+					<PartyHUD />
+					<div
+						className="map-resize-handle"
+						onMouseDown={onMapHandleMouseDown}
+						title="Drag to resize map"
+					/>
+					<MapPanel height={mapHeight} />
+				</div>
+			</div>
+
+			{/* ContextActionBar hidden — actions handled via chat and tactical grid */}
+
+			{currentRoll && (
+				<DiceRollWidget
+					key={`dice-${currentRoll.label}-${currentRoll.total}-${Date.now()}`}
+					roll={currentRoll}
+					onDismiss={dismissRoll}
+				/>
+			)}
+		</div>
+	);
 }

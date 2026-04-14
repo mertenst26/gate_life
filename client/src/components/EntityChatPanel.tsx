@@ -16,6 +16,8 @@ interface Props {
   /** When provided the panel opens in edit mode for this existing entity. */
   existingEntity?: ScenarioEntity;
   onConfirm: (name: string, definition: Record<string, unknown>, count: number) => void;
+  /** Called when the AI returns multiple distinct entities (gang, squad, etc.) — all placed at once. */
+  onConfirmBatch?: (entities: Array<{ name: string; definition: Record<string, unknown> }>) => void;
   onCancel: () => void;
 }
 
@@ -37,9 +39,10 @@ const ENTITY_LABEL: Record<ScenarioEntityType, string> = {
   friendly: 'Friendly unit',
   vehicle: 'Vehicle',
   poi: 'Point of interest',
+  dungeon: 'Dungeon',
 };
 
-export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEntity, onConfirm, onCancel }: Props) {
+export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEntity, onConfirm, onConfirmBatch, onCancel }: Props) {
   const { width: panelWidth, resizeHandleProps } = useResizablePanelWidth(CHAT_PANEL_WIDTH_KEY, 380);
   const isEditMode = !!existingEntity;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -47,6 +50,7 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [pendingDef, setPendingDef] = useState<{ name: string; definition: Record<string, unknown> } | null>(null);
+  const [pendingBatch, setPendingBatch] = useState<Array<{ name: string; definition: Record<string, unknown> }> | null>(null);
   const [count, setCount] = useState(1);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,6 +69,7 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
     setSuggestions([]);
     setMessages(chatMessages);
     setPendingDef(null);
+    setPendingBatch(null);
     try {
       const result = await api.chatScenarioEntity(scenarioId, {
         entity_type: entityType,
@@ -84,7 +89,9 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
       setMessages(prev => [...prev, { role: 'assistant', content: result.reply }]);
       setSuggestions(result.suggestions ?? []);
 
-      if (result.definition && result.name) {
+      if (result.definitions && result.definitions.length > 0) {
+        setPendingBatch(result.definitions);
+      } else if (result.definition && result.name) {
         setPendingDef({ name: result.name, definition: result.definition });
       }
     } catch (e) {
@@ -234,7 +241,8 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
         )}
       </div>
 
-      {pendingDef && (
+      {/* Single entity confirm */}
+      {pendingDef && !pendingBatch && (
         <div className="entity-confirm-bar">
           <span className="text-sm entity-confirm-name">
             <strong>{pendingDef.name}</strong>
@@ -260,6 +268,48 @@ export function EntityChatPanel({ scenarioId, entityType, lat, lng, existingEnti
               : allowPlacementCount && count > 1
                 ? `Place ${count}×`
                 : 'Place'}
+          </button>
+        </div>
+      )}
+
+      {/* Multi-entity (gang / squad) confirm */}
+      {pendingBatch && (
+        <div className="entity-confirm-bar entity-confirm-bar--batch">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-xs text-dim" style={{ marginBottom: '0.3rem' }}>
+              {pendingBatch.length} enemies ready — place all on the map:
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+              {pendingBatch.map((e, i) => (
+                <span
+                  key={i}
+                  className="text-xs"
+                  style={{
+                    background: 'rgba(255,255,255,0.07)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '4px',
+                    padding: '0.15rem 0.45rem',
+                  }}
+                >
+                  {e.name}
+                </span>
+              ))}
+            </div>
+          </div>
+          <button
+            className="btn btn-primary btn-sm"
+            style={{ flexShrink: 0 }}
+            onClick={() => {
+              if (onConfirmBatch) {
+                onConfirmBatch(pendingBatch);
+              } else {
+                // Fallback: place first entity only (legacy callers without batch support)
+                const first = pendingBatch[0];
+                if (first) onConfirm(first.name, first.definition, 1);
+              }
+            }}
+          >
+            Place All ({pendingBatch.length})
           </button>
         </div>
       )}

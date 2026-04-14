@@ -1,5 +1,5 @@
 import { useGame } from '../context/GameContext';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { CharacterInspector } from './CharacterInspector';
 import type { Combatant } from '@gate-life/shared';
 import { PARTY_MAX_SIZE } from '@gate-life/shared';
@@ -36,8 +36,27 @@ export function PartyHUD() {
   const [showSpawn, setShowSpawn] = useState(false);
   const [spawnName, setSpawnName] = useState('');
 
-  const emptySlots = PARTY_MAX_SIZE - state.party.length;
-  const inspectedCombatant = inspecting ? state.party.find(c => c.id === inspecting) : null;
+  /**
+   * Campaigns launched from the scenario builder store grid_origin on the campaign row.
+   * For those runs, the PARTY column is only for human players — AI Dog Boys belong on the map as scenario actors, not the squad list.
+   */
+  const gla = state.campaign?.grid_origin_lat;
+  const glo = state.campaign?.grid_origin_lng;
+  const scenarioAnchored =
+    gla != null &&
+    glo != null &&
+    Number.isFinite(Number(gla)) &&
+    Number.isFinite(Number(glo));
+
+  const partyRoster = useMemo(() => {
+    if (!scenarioAnchored) return state.party;
+    return state.party.filter(c => c.kind === 'human');
+  }, [state.party, scenarioAnchored]);
+
+  const allowSpawnAgentCompanion = !scenarioAnchored;
+
+  const emptySlots = PARTY_MAX_SIZE - partyRoster.length;
+  const inspectedCombatant = inspecting ? partyRoster.find(c => c.id === inspecting) : null;
 
   const handleSpawn = () => {
     if (!spawnName.trim()) return;
@@ -50,21 +69,26 @@ export function PartyHUD() {
     <div className="party-hud">
       <div className="party-header">
         <span className="party-title">PARTY</span>
-        <span className="party-count">{state.party.length}/{PARTY_MAX_SIZE}</span>
+        <span className="party-count">{partyRoster.length}/{PARTY_MAX_SIZE}</span>
       </div>
 
       <div className="party-members">
-        {state.party.map(c => (
+        {partyRoster.map(c => (
           <PartyMemberCard key={c.id} combatant={c} onClick={() => setInspecting(c.id)} />
         ))}
         {Array.from({ length: emptySlots }).map((_, i) => (
-          <div key={`empty-${i}`} className="party-card empty-slot" onClick={() => setShowSpawn(true)}>
+          <div
+            key={`empty-${i}`}
+            className={`party-card empty-slot ${!allowSpawnAgentCompanion ? 'empty-slot-disabled' : ''}`}
+            onClick={() => allowSpawnAgentCompanion && setShowSpawn(true)}
+            title={!allowSpawnAgentCompanion ? 'Scenario campaigns: only human players appear here; AI units are on the map.' : undefined}
+          >
             <span className="empty-label text-dim">+ Empty Slot</span>
           </div>
         ))}
       </div>
 
-      {showSpawn && state.role !== 'spectator' && (
+      {showSpawn && state.role !== 'spectator' && allowSpawnAgentCompanion && (
         <div className="spawn-dialog panel">
           <div className="spawn-title">Spawn Agent Companion</div>
           <input

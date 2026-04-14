@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { scenarioBuilder } from '../services/ScenarioBuilderService.js';
 import { gameState } from '../services/GameStateService.js';
+import { DEFAULT_GRID_ORIGIN_LAT, DEFAULT_GRID_ORIGIN_LNG } from '../services/OsmTerrainService.js';
 import type {
   CreateScenarioRequest, EntityChatRequest, QuestGiverProgressEntry, ScenarioContext, ScenarioEntityType, WanderingMonsterConfig,
 } from '@gate-life/shared';
@@ -139,21 +140,34 @@ export async function scenarioRoutes(app: FastifyInstance) {
 
     const entities = scenarioBuilder.getScenarioEntities(req.params.id);
 
-    const locationHint = scenarioBuilder.getLocationHint(scenario.start_lat, scenario.start_lng);
+    const startLatN = Number(scenario.start_lat);
+    const startLngN = Number(scenario.start_lng);
+    const start_lat = Number.isFinite(startLatN) ? startLatN : DEFAULT_GRID_ORIGIN_LAT;
+    const start_lng = Number.isFinite(startLngN) ? startLngN : DEFAULT_GRID_ORIGIN_LNG;
+
+    const locationHint = scenarioBuilder.getLocationHint(start_lat, start_lng);
     const settingText = scenario.description
       ? `${scenario.description}\n\nLOCATION: ${locationHint}`
-      : `LOCATION: ${locationHint}\nThe scenario starts at approximately ${scenario.start_lat.toFixed(4)}°N, ${Math.abs(scenario.start_lng).toFixed(4)}°W.`;
+      : `LOCATION: ${locationHint}\nThe scenario starts at approximately ${start_lat.toFixed(4)}°N, ${Math.abs(start_lng).toFixed(4)}°W.`;
 
     const scenario_context = buildScenarioContext(entities);
     const quest_giver_progress = initialQuestGiverProgress(scenario_context);
 
+    const scenarioPartyExcludedAgentNames = entities
+      .filter(e => e.entity_type === 'npc' || e.entity_type === 'friendly')
+      .map(e => e.name.trim())
+      .filter((n): n is string => n.length > 0);
+
     const campaign = gameState.createCampaign({
       name: scenario.name,
       gm_kind: scenario.gm_kind,
+      grid_origin_lat: start_lat,
+      grid_origin_lng: start_lng,
       gm_agent_config: {
         setting: settingText,
-        grid_origin_lat: scenario.start_lat,
-        grid_origin_lng: scenario.start_lng,
+        grid_origin_lat: start_lat,
+        grid_origin_lng: start_lng,
+        scenario_party_excluded_agent_names: scenarioPartyExcludedAgentNames,
         scenario_context,
         quest_giver_progress,
         ...(scenario.wandering_monster_config?.enabled
@@ -162,6 +176,8 @@ export async function scenarioRoutes(app: FastifyInstance) {
       },
     });
     const session = gameState.createSession(campaign.id);
+    // Persist grid origin on the session so the client map matches the scenario even if campaign JSON is delayed
+    gameState.updateSessionTerrainOrigin(session.id, start_lat, start_lng);
 
     for (const entity of entities) {
       const def = entity.definition as any;
@@ -239,26 +255,38 @@ export async function scenarioRoutes(app: FastifyInstance) {
           loot_table: [],
         });
       } else if (entity.entity_type === 'vehicle') {
+        const vehicleCfg = def.vehicle_config as Record<string, unknown> | undefined;
+        const vehicleSpeed = (vehicleCfg?.speed as number | undefined) ?? 15;
+        const vehicleType = (def.vehicle_type as string | undefined) ?? 'transport';
+        const isTransport = vehicleType.includes('transport') || vehicleType.includes('lifter') || vehicleType.includes('vtol') || vehicleType.includes('gunship');
         gameState.createEnemy(session.id, {
           name: entity.name,
           enemy_type: 'vehicle',
-          hp_max: 10,
-          hp_current: 10,
-          sdc_max: 0,
-          sdc_current: 0,
-          mdc_max: def.mdc_max ?? 100,
-          mdc_current: def.mdc_max ?? 100,
-          apm: 2,
-          initiative_bonus: 0,
-          strike_bonus: 0,
-          parry_bonus: 0,
-          dodge_bonus: 0,
-          damage: def.weapons?.[0] ?? '1d6',
+          icon_type: vehicleType,
+          hp_max: def.hp_max as number ?? 10,
+          hp_current: def.hp_max as number ?? 10,
+          sdc_max: def.sdc_max as number ?? 0,
+          sdc_current: def.sdc_max as number ?? 0,
+          mdc_max: def.mdc_max as number ?? 100,
+          mdc_current: def.mdc_max as number ?? 100,
+          apm: def.apm as number ?? 2,
+          initiative_bonus: def.initiative_bonus as number ?? 0,
+          strike_bonus: def.strike_bonus as number ?? 0,
+          parry_bonus: def.parry_bonus as number ?? 0,
+          dodge_bonus: def.dodge_bonus as number ?? 0,
+          damage: (def.weapons as string[] | undefined)?.[0] ?? '1d6',
           damage_type: 'md',
           tactical_x: entity.grid_x,
           tactical_y: entity.grid_y,
-          abilities: def.weapons ?? [],
+          abilities: def.weapons as string[] ?? [],
           loot_table: [],
+          support_config: {
+            unit_type: isTransport ? 'transport' : 'gunship',
+            speed: vehicleSpeed,
+            fuel: vehicleCfg?.fuel as number ?? 100,
+            max_fuel: vehicleCfg?.max_fuel as number ?? 100,
+            can_extract: isTransport,
+          },
         });
       } else if (entity.entity_type === 'poi') {
         // POI → enemies table with enemy_type='poi', minimal stats
@@ -283,9 +311,32 @@ export async function scenarioRoutes(app: FastifyInstance) {
           abilities: [],
           loot_table: (def.loot ?? []).map((item: string) => ({ item_id: item, chance: 100, quantity_min: 1, quantity_max: 1 })),
         });
+      } else if (entity.entity_type === 'dungeon') {
+        // Dungeon is a map overlay — stored in enemies table with enemy_type='dungeon', not a combatant
+        gameState.createEnemy(session.id, {
+          name: entity.name,
+          enemy_type: 'dungeon',
+          hp_max: 1,
+          hp_current: 1,
+          sdc_max: 0,
+          sdc_current: 0,
+          mdc_max: undefined,
+          mdc_current: undefined,
+          apm: 0,
+          initiative_bonus: 0,
+          strike_bonus: 0,
+          parry_bonus: 0,
+          dodge_bonus: 0,
+          damage: '0',
+          damage_type: 'sdc',
+          tactical_x: entity.grid_x,
+          tactical_y: entity.grid_y,
+          abilities: [],
+          loot_table: [],
+        });
       }
     }
 
-    return { campaign, session, scenario_id: scenario.id };
+    return { campaign, session: gameState.getSession(session.id)!, scenario_id: scenario.id };
   });
 }

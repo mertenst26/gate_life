@@ -1,8 +1,9 @@
 import { gameState } from './GameStateService.js';
 import { consequenceEngine } from './ConsequenceEngine.js';
 import { getDb } from '../db/connection.js';
+import { broadcastToSession } from '../ws/handler.js';
 import { rollInitiative, rollStrike, rollDefense, rollDamage, roll } from '@gate-life/shared';
-import type { TurnState, DiceRollResult, Combatant, Enemy, GameEvent } from '@gate-life/shared';
+import type { TurnState, DiceRollResult, Combatant, Enemy, GameEvent, SupportUnitConfig } from '@gate-life/shared';
 import { STRIKE_HIT_MINIMUM, NATURAL_CRIT, NATURAL_FUMBLE, MELEE_ROUND_SECONDS } from '@gate-life/shared';
 
 interface ActionResult {
@@ -620,6 +621,122 @@ export class TurnEngine {
         }
       }
       gameState.updateWorldClock(campaignId, clock);
+    }
+
+    // Move inbound support vehicles toward their destination
+    const inboundEvents = this.advanceInboundVehicles(campaignId, sessionId);
+    events.push(...inboundEvents);
+
+    return events;
+  }
+
+  /**
+   * Each round, advance any inbound support vehicles one step toward their destination.
+   * Handles takeoff delay, per-round movement, and arrival narration.
+   */
+  private advanceInboundVehicles(campaignId: string, sessionId: string): GameEvent[] {
+    const events: GameEvent[] = [];
+    const db = getDb();
+
+    const enemies = gameState.getSessionEnemies(sessionId);
+    const inbound = enemies.filter(
+      (e) => e.support_config?.inbound && e.status !== 'dead',
+    );
+
+    for (const unit of inbound) {
+      const cfg = unit.support_config as SupportUnitConfig;
+      const destX = cfg.destination_x ?? unit.tactical_x ?? 0;
+      const destY = cfg.destination_y ?? unit.tactical_y ?? 0;
+      const speed = cfg.speed ?? 15;
+
+      // Takeoff delay: count down before moving
+      if (cfg.takeoff_rounds_remaining && cfg.takeoff_rounds_remaining > 0) {
+        const newTakeoff = cfg.takeoff_rounds_remaining - 1;
+        const updatedCfg: SupportUnitConfig = { ...cfg, takeoff_rounds_remaining: newTakeoff };
+
+        db.prepare('UPDATE enemies SET support_config = ? WHERE id = ?').run(
+          JSON.stringify(updatedCfg),
+          unit.id,
+        );
+
+        const remaining = newTakeoff;
+        if (remaining === 0) {
+          // Last takeoff round — announce departure
+          const freshUnit = gameState.getEnemy(unit.id)!;
+          broadcastToSession(sessionId, {
+            type: 'enemy_update',
+            payload: freshUnit,
+            timestamp: new Date().toISOString(),
+          });
+          events.push(
+            gameState.logEvent({
+              campaign_id: campaignId,
+              session_id: sessionId,
+              event_type: 'support_inbound',
+              actor_id: unit.id,
+              narrative: `${unit.name} has lifted off and is moving to your position at ${speed * 10} ft/round.`,
+              visibility: 'party',
+            }),
+          );
+        }
+        continue;
+      }
+
+      // Move toward destination
+      const curX = unit.tactical_x ?? 0;
+      const curY = unit.tactical_y ?? 0;
+      const dx = destX - curX;
+      const dy = destY - curY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist <= 1) {
+        // Arrived
+        const arrivedCfg: SupportUnitConfig = {
+          ...cfg,
+          inbound: false,
+          takeoff_rounds_remaining: 0,
+          destination_x: undefined,
+          destination_y: undefined,
+        };
+        db.prepare(
+          'UPDATE enemies SET tactical_x = ?, tactical_y = ?, support_config = ? WHERE id = ?',
+        ).run(destX, destY, JSON.stringify(arrivedCfg), unit.id);
+
+        const arrivedUnit = gameState.getEnemy(unit.id)!;
+        broadcastToSession(sessionId, {
+          type: 'enemy_update',
+          payload: arrivedUnit,
+          timestamp: new Date().toISOString(),
+        });
+
+        events.push(
+          gameState.logEvent({
+            campaign_id: campaignId,
+            session_id: sessionId,
+            event_type: 'support_arrived',
+            actor_id: unit.id,
+            narrative: `${unit.name} has arrived on scene and is ready for extraction or support.`,
+            visibility: 'party',
+          }),
+        );
+        continue;
+      }
+
+      // Step toward destination by up to `speed` grid units
+      const stepFraction = Math.min(speed / dist, 1);
+      const newX = Math.round(curX + dx * stepFraction);
+      const newY = Math.round(curY + dy * stepFraction);
+
+      db.prepare(
+        'UPDATE enemies SET tactical_x = ?, tactical_y = ? WHERE id = ?',
+      ).run(newX, newY, unit.id);
+
+      const movedUnit = gameState.getEnemy(unit.id)!;
+      broadcastToSession(sessionId, {
+        type: 'enemy_update',
+        payload: movedUnit,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     return events;

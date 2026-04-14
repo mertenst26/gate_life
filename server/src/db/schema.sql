@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
   gm_kind TEXT NOT NULL CHECK (gm_kind IN ('human', 'agent')),
   gm_user_id TEXT,
   gm_agent_config TEXT, -- JSON
+  /** Tactical grid (0,0) — set when launching from a scenario (authoritative for map; also mirrored in gm_agent_config). */
+  grid_origin_lat REAL,
+  grid_origin_lng REAL,
   world_clock TEXT NOT NULL DEFAULT '{"day":1,"hour":8,"minute":0}', -- JSON
   deleted_at TEXT, -- soft delete timestamp; NULL = active
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -189,6 +192,7 @@ CREATE TABLE IF NOT EXISTS enemies (
   loot_table TEXT DEFAULT '[]', -- JSON
   detected INTEGER NOT NULL DEFAULT 0, -- 1 when party has spotted this entity
   quest_poi INTEGER NOT NULL DEFAULT 0, -- 1 = active quest destination (yellow map marker)
+  support_config TEXT, -- JSON: SupportUnitConfig (speed, inbound, takeoff_rounds_remaining, etc.)
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -237,7 +241,7 @@ CREATE TABLE IF NOT EXISTS scenarios (
 CREATE TABLE IF NOT EXISTS scenario_entities (
   id TEXT PRIMARY KEY,
   scenario_id TEXT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
-  entity_type TEXT NOT NULL CHECK (entity_type IN ('enemy', 'npc', 'friendly', 'vehicle', 'poi')),
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('enemy', 'npc', 'friendly', 'vehicle', 'poi', 'dungeon')),
   grid_x INTEGER NOT NULL DEFAULT 0,
   grid_y INTEGER NOT NULL DEFAULT 0,
   lat REAL NOT NULL,

@@ -59,26 +59,28 @@ export async function checkWanderingMonster(opts: CheckOptions): Promise<void> {
   let triggered = false;
 
   for (let t = 0; t < turns; t++) {
-    const roll = Math.floor(Math.random() * 100) + 1;
+    // Use a 0–100 float roll so sub-1% chances (e.g. 0.4%) work correctly
+    const roll = Math.random() * 100;
+    const rollDisplay = Math.round(roll * 10) / 10; // 1 decimal for display
 
-    // Broadcast the d100 roll — GM-only visibility handled client-side via gm_only flag
+    // Broadcast the roll — GM-only visibility handled client-side via gm_only flag
     broadcast({
       type: 'dice_roll',
       payload: {
         dice: 'd100',
-        results: [roll],
+        results: [rollDisplay],
         modifier: 0,
-        total: roll,
-        natural: roll,
+        total: rollDisplay,
+        natural: rollDisplay,
         label: 'Wandering Monster Check',
         gm_only: true,
       },
       timestamp: now,
     });
 
-    console.log(`[wandering-monster] roll=${roll} vs chance=${wmConfig.encounter_chance}% (turn ${t + 1}/${turns})`);
+    console.log(`[wandering-monster] roll=${rollDisplay.toFixed(1)} vs chance=${wmConfig.encounter_chance}% (turn ${t + 1}/${turns})`);
 
-    if (roll <= wmConfig.encounter_chance && !triggered) {
+    if (roll < wmConfig.encounter_chance && !triggered) {
       triggered = true;
 
       // Spawn the monster on a passable edge cell
