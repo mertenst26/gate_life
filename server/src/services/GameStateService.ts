@@ -12,7 +12,7 @@ import type {
 	Injury,
 	InventoryItem,
 	SendMessageRequest,
-	Session,
+	SupportUnitConfig,
 	TacticalTile,
 	TurnState,
 	VitalSample,
@@ -20,191 +20,85 @@ import type {
 } from "@gate-life/shared";
 import { v4 as uuid } from "uuid";
 import { getDb } from "../db/connection.js";
+import { campaignSessionService } from "./CampaignSessionService.js";
+import { enemyService } from "./EnemyService.js";
 
-/** Coerce grid_origin_* from DB/JSON (may be numeric strings) and drop invalid values. */
-function coerceGridCoord(v: unknown): number | null | undefined {
-	if (v === undefined) return undefined;
-	if (v === null || v === "") return null;
-	const n = Number(v);
-	return Number.isFinite(n) ? n : null;
-}
-
-function normalizeGmAgentConfig(raw: unknown): AgentGmConfig | undefined {
-	if (raw == null || typeof raw !== "object") return undefined;
-	const cfg = { ...(raw as AgentGmConfig) };
-	const lat = Number(cfg.grid_origin_lat as unknown as number);
-	const lng = Number(cfg.grid_origin_lng as unknown as number);
-	if (Number.isFinite(lat)) cfg.grid_origin_lat = lat;
-	else delete cfg.grid_origin_lat;
-	if (Number.isFinite(lng)) cfg.grid_origin_lng = lng;
-	else delete cfg.grid_origin_lng;
-	return cfg;
-}
-
+/**
+ * Central facade for all game state DB access.
+ * Delegates campaign/session ops to CampaignSessionService and
+ * enemy ops to EnemyService, keeping the `gameState.*` API stable.
+ */
 export class GameStateService {
-	// ── Campaigns ──
+	// ── Campaigns (delegated) ──
 
 	createCampaign(req: CreateCampaignRequest): Campaign {
-		const db = getDb();
-		const id = uuid();
-		const now = new Date().toISOString();
-		const golat = req.grid_origin_lat;
-		const golng = req.grid_origin_lng;
-		const gridLat =
-			golat != null && Number.isFinite(Number(golat)) ? Number(golat) : null;
-		const gridLng =
-			golng != null && Number.isFinite(Number(golng)) ? Number(golng) : null;
-		db.prepare(`
-      INSERT INTO campaigns (id, name, creator_user_id, gm_kind, gm_user_id, gm_agent_config, grid_origin_lat, grid_origin_lng, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-			id,
-			req.name,
-			req.gm_user_id || "system",
-			req.gm_kind,
-			req.gm_user_id || null,
-			req.gm_agent_config ? JSON.stringify(req.gm_agent_config) : null,
-			gridLat,
-			gridLng,
-			now,
-			now,
-		);
-		return this.getCampaign(id)!;
+		return campaignSessionService.createCampaign(req);
 	}
-
 	getCampaign(id: string): Campaign | null {
-		const db = getDb();
-		const row = db
-			.prepare("SELECT * FROM campaigns WHERE id = ?")
-			.get(id) as any;
-		if (!row) return null;
-		return {
-			...row,
-			world_clock: JSON.parse(row.world_clock),
-			gm_agent_config: row.gm_agent_config
-				? normalizeGmAgentConfig(JSON.parse(row.gm_agent_config))
-				: undefined,
-			grid_origin_lat: coerceGridCoord(row.grid_origin_lat),
-			grid_origin_lng: coerceGridCoord(row.grid_origin_lng),
-		};
+		return campaignSessionService.getCampaign(id);
 	}
-
 	listCampaigns(): Campaign[] {
-		const db = getDb();
-		const rows = db
-			.prepare("SELECT * FROM campaigns ORDER BY created_at DESC")
-			.all() as any[];
-		return rows.map((row) => ({
-			...row,
-			world_clock: JSON.parse(row.world_clock),
-			gm_agent_config: row.gm_agent_config
-				? normalizeGmAgentConfig(JSON.parse(row.gm_agent_config))
-				: undefined,
-			grid_origin_lat: coerceGridCoord(row.grid_origin_lat),
-			grid_origin_lng: coerceGridCoord(row.grid_origin_lng),
-		}));
+		return campaignSessionService.listCampaigns();
 	}
-
 	deleteCampaign(id: string): void {
-		const db = getDb();
-		db.prepare("DELETE FROM campaigns WHERE id = ?").run(id);
+		return campaignSessionService.deleteCampaign(id);
 	}
-
 	updateWorldClock(campaignId: string, clock: WorldClock): void {
-		const db = getDb();
-		db.prepare(
-			"UPDATE campaigns SET world_clock = ?, updated_at = ? WHERE id = ?",
-		).run(JSON.stringify(clock), new Date().toISOString(), campaignId);
+		return campaignSessionService.updateWorldClock(campaignId, clock);
 	}
-
-	/** Shallow-merge patch into gm_agent_config; deep-merge quest_giver_progress when present. */
 	mergeGmAgentConfig(campaignId: string, patch: Partial<AgentGmConfig>): void {
-		const c = this.getCampaign(campaignId);
-		if (!c) return;
-		const base = c.gm_agent_config ?? {};
-		const merged: AgentGmConfig = { ...base, ...patch };
-		if (patch.quest_giver_progress != null) {
-			merged.quest_giver_progress = {
-				...(base.quest_giver_progress ?? {}),
-				...patch.quest_giver_progress,
-			};
-		}
-		const db = getDb();
-		db.prepare(
-			"UPDATE campaigns SET gm_agent_config = ?, updated_at = ? WHERE id = ?",
-		).run(JSON.stringify(merged), new Date().toISOString(), campaignId);
+		return campaignSessionService.mergeGmAgentConfig(campaignId, patch);
 	}
 
-	// ── Sessions ──
+	// ── Sessions (delegated) ──
 
-	createSession(campaignId: string): Session {
-		const db = getDb();
-		const id = uuid();
-		const now = new Date().toISOString();
-		db.prepare(`
-      INSERT INTO sessions (id, campaign_id, current_mode, active, created_at, updated_at)
-      VALUES (?, ?, 'charCreate', 1, ?, ?)
-    `).run(id, campaignId, now, now);
-		return this.getSession(id)!;
+	createSession(campaignId: string): import("@gate-life/shared").Session {
+		return campaignSessionService.createSession(campaignId);
 	}
-
-	getSession(id: string): Session | null {
-		const db = getDb();
-		const row = db
-			.prepare("SELECT * FROM sessions WHERE id = ?")
-			.get(id) as any;
-		if (!row) return null;
-		return {
-			...row,
-			active: Boolean(row.active),
-			turn_state: row.turn_state ? JSON.parse(row.turn_state) : undefined,
-			spectator_user_ids: JSON.parse(row.spectator_user_ids),
-		};
+	getSession(id: string): import("@gate-life/shared").Session | null {
+		return campaignSessionService.getSession(id);
 	}
-
-	getActiveSession(campaignId: string): Session | null {
-		const db = getDb();
-		const row = db
-			.prepare("SELECT * FROM sessions WHERE campaign_id = ? AND active = 1")
-			.get(campaignId) as any;
-		if (!row) return null;
-		return {
-			...row,
-			active: Boolean(row.active),
-			turn_state: row.turn_state ? JSON.parse(row.turn_state) : undefined,
-			spectator_user_ids: JSON.parse(row.spectator_user_ids),
-		};
+	getActiveSession(campaignId: string): import("@gate-life/shared").Session | null {
+		return campaignSessionService.getActiveSession(campaignId);
 	}
-
 	updateSessionMode(sessionId: string, mode: GameMode): void {
-		const db = getDb();
-		db.prepare(
-			"UPDATE sessions SET current_mode = ?, updated_at = ? WHERE id = ?",
-		).run(mode, new Date().toISOString(), sessionId);
+		return campaignSessionService.updateSessionMode(sessionId, mode);
 	}
-
 	updateTurnState(sessionId: string, turnState: TurnState | null): void {
-		const db = getDb();
-		db.prepare(
-			"UPDATE sessions SET turn_state = ?, updated_at = ? WHERE id = ?",
-		).run(
-			turnState ? JSON.stringify(turnState) : null,
-			new Date().toISOString(),
-			sessionId,
-		);
+		return campaignSessionService.updateTurnState(sessionId, turnState);
+	}
+	addSpectator(sessionId: string, userId: string): void {
+		return campaignSessionService.addSpectator(sessionId, userId);
 	}
 
-	addSpectator(sessionId: string, userId: string): void {
-		const db = getDb();
-		const session = this.getSession(sessionId);
-		if (!session) return;
-		const specs = session.spectator_user_ids;
-		if (!specs.includes(userId)) {
-			specs.push(userId);
-			db.prepare(
-				"UPDATE sessions SET spectator_user_ids = ?, updated_at = ? WHERE id = ?",
-			).run(JSON.stringify(specs), new Date().toISOString(), sessionId);
-		}
+	// ── Enemies (delegated) ──
+
+	createEnemy(
+		sessionId: string,
+		enemy: Partial<Enemy> & { name: string; enemy_type: string; hp_max: number },
+	): Enemy {
+		return enemyService.createEnemy(sessionId, enemy);
+	}
+	getEnemy(id: string): Enemy | null {
+		return enemyService.getEnemy(id);
+	}
+	getSessionEnemies(sessionId: string): Enemy[] {
+		return enemyService.getSessionEnemies(sessionId);
+	}
+	updateEnemySupportConfig(id: string, config: SupportUnitConfig): void {
+		return enemyService.updateEnemySupportConfig(id, config);
+	}
+	markEnemyDetected(id: string): void {
+		return enemyService.markEnemyDetected(id);
+	}
+	markPoiQuestReveal(id: string): void {
+		return enemyService.markPoiQuestReveal(id);
+	}
+	updateEnemyHp(id: string, hp: number, status?: CombatantStatus): void {
+		return enemyService.updateEnemyHp(id, hp, status);
+	}
+	updateEnemyPosition(id: string, x: number, y: number, facing?: string): void {
+		return enemyService.updateEnemyPosition(id, x, y, facing);
 	}
 
 	// ── Combatants ──
@@ -228,12 +122,12 @@ export class GameStateService {
 			tactical_x?: number;
 			tactical_y?: number;
 			party_member?: boolean;
+			user_id?: string;
 		},
 	): Combatant {
 		const db = getDb();
 		const id = uuid();
 		const now = new Date().toISOString();
-
 		const partyMember = req.party_member === false ? 0 : 1;
 
 		db.prepare(`
@@ -244,7 +138,7 @@ export class GameStateService {
         armor_mdc_current, armor_mdc_max,
         apm, initiative_bonus, strike_bonus, parry_bonus, dodge_bonus, roll_with_impact_bonus, damage_bonus,
         psionic_powers, skills, inventory, equipped,
-        xp_next_level, tactical_x, tactical_y, party_member,
+        xp_next_level, tactical_x, tactical_y, party_member, user_id,
         created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?,
@@ -253,7 +147,7 @@ export class GameStateService {
         ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
         ?, ?
       )
     `).run(
@@ -298,6 +192,7 @@ export class GameStateService {
 			req.tactical_x ?? 0,
 			req.tactical_y ?? 0,
 			partyMember,
+			req.user_id || null,
 			now,
 			now,
 		);
@@ -329,7 +224,6 @@ export class GameStateService {
 		return rows.map((r) => this.rowToCombatant(r));
 	}
 
-	/** Scenario-placed NPCs: combatants on the map/tactical board but not in the party HUD */
 	getWorldNpcCombatants(campaignId: string): Combatant[] {
 		const db = getDb();
 		const rows = db
@@ -441,6 +335,26 @@ export class GameStateService {
 		this.updateCombatantVitals(id, { status: "dead", hp_current: 0 });
 	}
 
+	/** Claim an unclaimed combatant for a specific user. Returns true if successful. */
+	claimCombatant(combatantId: string, userId: string): boolean {
+		const db = getDb();
+		const result = db.prepare(
+			"UPDATE combatants SET user_id = ?, updated_at = ? WHERE id = ? AND (user_id IS NULL OR user_id = ?)",
+		).run(userId, new Date().toISOString(), combatantId, userId);
+		return result.changes > 0;
+	}
+
+	/** Get combatants in a campaign that no user has claimed. */
+	getUnclaimedCombatants(campaignId: string): Combatant[] {
+		const db = getDb();
+		const rows = db
+			.prepare(
+				"SELECT * FROM combatants WHERE campaign_id = ? AND kind = 'human' AND (user_id IS NULL OR user_id = '') AND status != 'dead' ORDER BY created_at",
+			)
+			.all(campaignId) as any[];
+		return rows.map((r) => this.rowToCombatant(r));
+	}
+
 	// ── Injuries ──
 
 	addInjury(combatantId: string, injury: Omit<Injury, "id">): Injury {
@@ -449,28 +363,14 @@ export class GameStateService {
 		db.prepare(`
       INSERT INTO injuries (id, combatant_id, body_location, severity, injury_type, bleeding, pain_level, healing_progress)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-			id,
-			combatantId,
-			injury.body_location,
-			injury.severity,
-			injury.injury_type,
-			injury.bleeding ? 1 : 0,
-			injury.pain_level,
-			injury.healing_progress,
-		);
+    `).run(id, combatantId, injury.body_location, injury.severity, injury.injury_type, injury.bleeding ? 1 : 0, injury.pain_level, injury.healing_progress);
 		return { id, ...injury };
 	}
 
 	getInjuries(combatantId: string): Injury[] {
 		const db = getDb();
-		const rows = db
-			.prepare("SELECT * FROM injuries WHERE combatant_id = ?")
-			.all(combatantId) as any[];
-		return rows.map((r) => ({
-			...r,
-			bleeding: Boolean(r.bleeding),
-		}));
+		const rows = db.prepare("SELECT * FROM injuries WHERE combatant_id = ?").all(combatantId) as any[];
+		return rows.map((r) => ({ ...r, bleeding: Boolean(r.bleeding) }));
 	}
 
 	removeInjury(injuryId: string): void {
@@ -487,16 +387,7 @@ export class GameStateService {
 		db.prepare(`
       INSERT INTO messages (id, campaign_id, session_id, actor_id, message_type, content, visibility, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-			id,
-			req.campaign_id,
-			req.session_id || null,
-			req.actor_id || null,
-			req.message_type,
-			req.content,
-			req.visibility || "party",
-			now,
-		);
+    `).run(id, req.campaign_id, req.session_id || null, req.actor_id || null, req.message_type, req.content, req.visibility || "party", now);
 		return {
 			id,
 			campaign_id: req.campaign_id,
@@ -509,26 +400,14 @@ export class GameStateService {
 		};
 	}
 
-	getMessages(
-		campaignId: string,
-		opts?: { sessionId?: string; limit?: number; before?: string },
-	): ChatMessage[] {
+	getMessages(campaignId: string, opts?: { sessionId?: string; limit?: number; before?: string }): ChatMessage[] {
 		const db = getDb();
 		let query = "SELECT * FROM messages WHERE campaign_id = ?";
 		const params: any[] = [campaignId];
-
-		if (opts?.sessionId) {
-			query += " AND session_id = ?";
-			params.push(opts.sessionId);
-		}
-		if (opts?.before) {
-			query += " AND created_at < ?";
-			params.push(opts.before);
-		}
-
+		if (opts?.sessionId) { query += " AND session_id = ?"; params.push(opts.sessionId); }
+		if (opts?.before) { query += " AND created_at < ?"; params.push(opts.before); }
 		query += " ORDER BY created_at DESC LIMIT ?";
 		params.push(opts?.limit || 50);
-
 		const rows = db.prepare(query).all(...params) as any[];
 		return rows.reverse();
 	}
@@ -542,218 +421,33 @@ export class GameStateService {
 		db.prepare(`
       INSERT INTO game_events (id, campaign_id, session_id, event_type, actor_id, target_id, data, narrative, visibility, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-			id,
-			event.campaign_id,
-			event.session_id || null,
-			event.event_type,
-			event.actor_id || null,
-			event.target_id || null,
-			event.data ? JSON.stringify(event.data) : null,
-			event.narrative || null,
-			event.visibility || "party",
-			now,
-		);
+    `).run(id, event.campaign_id, event.session_id || null, event.event_type, event.actor_id || null, event.target_id || null, event.data ? JSON.stringify(event.data) : null, event.narrative || null, event.visibility || "party", now);
 		return { id, ...event, created_at: now };
 	}
 
-	getEvents(
-		campaignId: string,
-		opts?: {
-			sessionId?: string;
-			eventType?: string;
-			actorId?: string;
-			limit?: number;
-		},
-	): GameEvent[] {
+	getEvents(campaignId: string, opts?: { sessionId?: string; eventType?: string; actorId?: string; limit?: number }): GameEvent[] {
 		const db = getDb();
 		let query = "SELECT * FROM game_events WHERE campaign_id = ?";
 		const params: any[] = [campaignId];
-
-		if (opts?.sessionId) {
-			query += " AND session_id = ?";
-			params.push(opts.sessionId);
-		}
-		if (opts?.eventType) {
-			query += " AND event_type = ?";
-			params.push(opts.eventType);
-		}
-		if (opts?.actorId) {
-			query += " AND actor_id = ?";
-			params.push(opts.actorId);
-		}
-
+		if (opts?.sessionId) { query += " AND session_id = ?"; params.push(opts.sessionId); }
+		if (opts?.eventType) { query += " AND event_type = ?"; params.push(opts.eventType); }
+		if (opts?.actorId) { query += " AND actor_id = ?"; params.push(opts.actorId); }
 		query += " ORDER BY created_at DESC LIMIT ?";
 		params.push(opts?.limit || 100);
-
-		return (db.prepare(query).all(...params) as any[]).reverse().map((r) => ({
-			...r,
-			data: r.data ? JSON.parse(r.data) : undefined,
-		}));
-	}
-
-	// ── Enemies ──
-
-	createEnemy(
-		sessionId: string,
-		enemy: Partial<Enemy> & {
-			name: string;
-			enemy_type: string;
-			hp_max: number;
-		},
-	): Enemy {
-		const db = getDb();
-		const id = uuid();
-
-		// Auto-number duplicate enemy names
-		let finalName = enemy.name;
-		const existingEnemies = this.getSessionEnemies(sessionId);
-		const sameNameEnemies = existingEnemies.filter((e) =>
-			e.name.startsWith(enemy.name),
-		);
-		if (sameNameEnemies.length > 0) {
-			// Find the next available number
-			const numbers = sameNameEnemies
-				.map((e) => {
-					const match = e.name.match(new RegExp(`^${enemy.name}\\s+(\\d+)$`));
-					return match ? parseInt(match[1], 10) : e.name === enemy.name ? 1 : 0;
-				})
-				.filter((n) => n > 0);
-			const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 2;
-			finalName = `${enemy.name} ${nextNum}`;
-		}
-
-		db.prepare(`
-      INSERT INTO enemies (id, session_id, name, enemy_type, icon_type, hp_current, hp_max, sdc_current, sdc_max,
-        mdc_current, mdc_max, apm, initiative_bonus, strike_bonus, parry_bonus, dodge_bonus,
-        damage, damage_type, tactical_x, tactical_y, abilities, loot_table, support_config)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-			id,
-			sessionId,
-			finalName,
-			enemy.enemy_type,
-			enemy.icon_type ?? null,
-			enemy.hp_current ?? enemy.hp_max,
-			enemy.hp_max,
-			enemy.sdc_current ?? enemy.sdc_max ?? 0,
-			enemy.sdc_max ?? 0,
-			enemy.mdc_current ?? null,
-			enemy.mdc_max ?? null,
-			enemy.apm ?? 2,
-			enemy.initiative_bonus ?? 0,
-			enemy.strike_bonus ?? 0,
-			enemy.parry_bonus ?? 0,
-			enemy.dodge_bonus ?? 0,
-			enemy.damage ?? "1d6",
-			enemy.damage_type ?? "sdc",
-			enemy.tactical_x ?? null,
-			enemy.tactical_y ?? null,
-			JSON.stringify(enemy.abilities ?? []),
-			JSON.stringify(enemy.loot_table ?? []),
-			enemy.support_config ? JSON.stringify(enemy.support_config) : null,
-		);
-		return this.getEnemy(id)!;
-	}
-
-	getEnemy(id: string): Enemy | null {
-		const db = getDb();
-		const row = db.prepare("SELECT * FROM enemies WHERE id = ?").get(id) as any;
-		if (!row) return null;
-		return this.parseEnemyRow(row);
-	}
-
-	getSessionEnemies(sessionId: string): Enemy[] {
-		const db = getDb();
-		const rows = db
-			.prepare("SELECT * FROM enemies WHERE session_id = ?")
-			.all(sessionId) as any[];
-		return rows.map((r) => this.parseEnemyRow(r));
-	}
-
-	private parseEnemyRow(r: any): Enemy {
-		return {
-			...r,
-			facing: r.facing ?? undefined,
-			icon_type: r.icon_type ?? undefined,
-			abilities: JSON.parse(r.abilities ?? "[]"),
-			loot_table: JSON.parse(r.loot_table ?? "[]"),
-			detected: Boolean(r.detected),
-			quest_poi: Boolean(r.quest_poi),
-			support_config: r.support_config
-				? JSON.parse(r.support_config)
-				: undefined,
-		};
-	}
-
-	updateEnemySupportConfig(id: string, config: import("@gate-life/shared").SupportUnitConfig): void {
-		const db = getDb();
-		db.prepare("UPDATE enemies SET support_config = ? WHERE id = ?").run(
-			JSON.stringify(config),
-			id,
-		);
-	}
-
-	markEnemyDetected(id: string): void {
-		const db = getDb();
-		db.prepare("UPDATE enemies SET detected = 1 WHERE id = ?").run(id);
-	}
-
-	/** Reveal a POI on the map as a quest destination (yellow marker). */
-	markPoiQuestReveal(id: string): void {
-		const db = getDb();
-		db.prepare(
-			"UPDATE enemies SET detected = 1, quest_poi = 1 WHERE id = ?",
-		).run(id);
-	}
-
-	updateEnemyHp(id: string, hp: number, status?: CombatantStatus): void {
-		const db = getDb();
-		if (status) {
-			db.prepare(
-				"UPDATE enemies SET hp_current = ?, status = ? WHERE id = ?",
-			).run(hp, status, id);
-		} else {
-			db.prepare("UPDATE enemies SET hp_current = ? WHERE id = ?").run(hp, id);
-		}
-	}
-
-	updateEnemyPosition(id: string, x: number, y: number, facing?: string): void {
-		const db = getDb();
-		if (facing) {
-			db.prepare(
-				"UPDATE enemies SET tactical_x = ?, tactical_y = ?, facing = ? WHERE id = ?",
-			).run(x, y, facing, id);
-		} else {
-			db.prepare(
-				"UPDATE enemies SET tactical_x = ?, tactical_y = ? WHERE id = ?",
-			).run(x, y, id);
-		}
+		return (db.prepare(query).all(...params) as any[]).reverse().map((r) => ({ ...r, data: r.data ? JSON.parse(r.data) : undefined }));
 	}
 
 	// ── Tactical Terrain ──
 
-	/** Remove all tactical tiles for a session (e.g. grid origin changed). Clears stored terrain origin. */
 	clearTerrain(sessionId: string): void {
 		const db = getDb();
-		db.prepare("DELETE FROM tactical_terrain WHERE session_id = ?").run(
-			sessionId,
-		);
-		db.prepare(`
-      UPDATE sessions SET terrain_origin_lat = NULL, terrain_origin_lng = NULL, updated_at = ? WHERE id = ?
-    `).run(new Date().toISOString(), sessionId);
+		db.prepare("DELETE FROM tactical_terrain WHERE session_id = ?").run(sessionId);
+		db.prepare(`UPDATE sessions SET terrain_origin_lat = NULL, terrain_origin_lng = NULL, updated_at = ? WHERE id = ?`).run(new Date().toISOString(), sessionId);
 	}
 
-	/** Record which lat/lng was used as grid (0,0) when terrain was generated. */
-	updateSessionTerrainOrigin(
-		sessionId: string,
-		originLat: number,
-		originLng: number,
-	): void {
+	updateSessionTerrainOrigin(sessionId: string, originLat: number, originLng: number): void {
 		const db = getDb();
-		db.prepare(`
-      UPDATE sessions SET terrain_origin_lat = ?, terrain_origin_lng = ?, updated_at = ? WHERE id = ?
-    `).run(originLat, originLng, new Date().toISOString(), sessionId);
+		db.prepare(`UPDATE sessions SET terrain_origin_lat = ?, terrain_origin_lng = ?, updated_at = ? WHERE id = ?`).run(originLat, originLng, new Date().toISOString(), sessionId);
 	}
 
 	setTerrain(sessionId: string, tiles: TacticalTile[]): void {
@@ -764,16 +458,7 @@ export class GameStateService {
     `);
 		const batch = db.transaction((t: TacticalTile[]) => {
 			for (const tile of t) {
-				stmt.run(
-					sessionId,
-					tile.x,
-					tile.y,
-					tile.terrain_type,
-					tile.cover || null,
-					tile.elevation,
-					tile.revealed ? 1 : 0,
-					tile.metadata ? JSON.stringify(tile.metadata) : null,
-				);
+				stmt.run(sessionId, tile.x, tile.y, tile.terrain_type, tile.cover || null, tile.elevation, tile.revealed ? 1 : 0, tile.metadata ? JSON.stringify(tile.metadata) : null);
 			}
 		});
 		batch(tiles);
@@ -781,61 +466,32 @@ export class GameStateService {
 
 	getTerrain(sessionId: string): TacticalTile[] {
 		const db = getDb();
-		const rows = db
-			.prepare("SELECT * FROM tactical_terrain WHERE session_id = ?")
-			.all(sessionId) as any[];
-		return rows.map((r) => ({
-			x: r.x,
-			y: r.y,
-			terrain_type: r.terrain_type,
-			cover: r.cover || null,
-			elevation: r.elevation,
-			revealed: Boolean(r.revealed),
-			metadata: r.metadata ? JSON.parse(r.metadata) : undefined,
-		}));
+		const rows = db.prepare("SELECT * FROM tactical_terrain WHERE session_id = ?").all(sessionId) as any[];
+		return rows.map((r) => ({ x: r.x, y: r.y, terrain_type: r.terrain_type, cover: r.cover || null, elevation: r.elevation, revealed: Boolean(r.revealed), metadata: r.metadata ? JSON.parse(r.metadata) : undefined }));
 	}
 
-	revealTerrain(
-		sessionId: string,
-		positions: Array<{ x: number; y: number }>,
-	): void {
+	revealTerrain(sessionId: string, positions: Array<{ x: number; y: number }>): void {
 		const db = getDb();
-		const stmt = db.prepare(
-			"UPDATE tactical_terrain SET revealed = 1 WHERE session_id = ? AND x = ? AND y = ?",
-		);
-		for (const pos of positions) {
-			stmt.run(sessionId, pos.x, pos.y);
-		}
+		const stmt = db.prepare("UPDATE tactical_terrain SET revealed = 1 WHERE session_id = ? AND x = ? AND y = ?");
+		for (const pos of positions) { stmt.run(sessionId, pos.x, pos.y); }
 	}
 
 	// ── Vital Samples ──
 
-	recordVitalSample(
-		combatantId: string,
-		pulseBpm: number,
-		internalTemp: number,
-	): void {
+	recordVitalSample(combatantId: string, pulseBpm: number, internalTemp: number): void {
 		const db = getDb();
-		db.prepare(
-			"INSERT INTO vital_samples (combatant_id, pulse_bpm, internal_temp) VALUES (?, ?, ?)",
-		).run(combatantId, pulseBpm, internalTemp);
+		db.prepare("INSERT INTO vital_samples (combatant_id, pulse_bpm, internal_temp) VALUES (?, ?, ?)").run(combatantId, pulseBpm, internalTemp);
 	}
 
 	getVitalSamples(combatantId: string, limit = 300): VitalSample[] {
 		const db = getDb();
-		const rows = db
-			.prepare(
-				"SELECT * FROM vital_samples WHERE combatant_id = ? ORDER BY sampled_at DESC LIMIT ?",
-			)
-			.all(combatantId, limit) as any[];
+		const rows = db.prepare("SELECT * FROM vital_samples WHERE combatant_id = ? ORDER BY sampled_at DESC LIMIT ?").all(combatantId, limit) as any[];
 		return rows.reverse();
 	}
 
 	pruneVitalSamples(olderThanMinutes = 30): void {
 		const db = getDb();
-		db.prepare(
-			"DELETE FROM vital_samples WHERE sampled_at < datetime('now', '-' || ? || ' minutes')",
-		).run(olderThanMinutes);
+		db.prepare("DELETE FROM vital_samples WHERE sampled_at < datetime('now', '-' || ? || ' minutes')").run(olderThanMinutes);
 	}
 
 	// ── Private helpers ──
@@ -851,38 +507,9 @@ export class GameStateService {
 			name: row.name,
 			status: row.status,
 			personality: row.personality ? JSON.parse(row.personality) : undefined,
-			attributes: {
-				iq: row.iq,
-				me: row.me,
-				ma: row.ma,
-				ps: row.ps,
-				pp: row.pp,
-				pe: row.pe,
-				pb: row.pb,
-				spd_bipedal: row.spd_bipedal,
-				spd_quadruped: row.spd_quadruped,
-			},
-			vitals: {
-				hp_current: row.hp_current,
-				hp_max: row.hp_max,
-				sdc_current: row.sdc_current,
-				sdc_max: row.sdc_max,
-				isp_current: row.isp_current,
-				isp_max: row.isp_max,
-				ppe_current: row.ppe_current,
-				ppe_max: row.ppe_max,
-				armor_mdc_current: row.armor_mdc_current,
-				armor_mdc_max: row.armor_mdc_max,
-			},
-			combat: {
-				initiative_bonus: row.initiative_bonus,
-				strike_bonus: row.strike_bonus,
-				parry_bonus: row.parry_bonus,
-				dodge_bonus: row.dodge_bonus,
-				roll_with_impact_bonus: row.roll_with_impact_bonus,
-				damage_bonus: row.damage_bonus,
-				apm: row.apm,
-			},
+			attributes: { iq: row.iq, me: row.me, ma: row.ma, ps: row.ps, pp: row.pp, pe: row.pe, pb: row.pb, spd_bipedal: row.spd_bipedal, spd_quadruped: row.spd_quadruped },
+			vitals: { hp_current: row.hp_current, hp_max: row.hp_max, sdc_current: row.sdc_current, sdc_max: row.sdc_max, isp_current: row.isp_current, isp_max: row.isp_max, ppe_current: row.ppe_current, ppe_max: row.ppe_max, armor_mdc_current: row.armor_mdc_current, armor_mdc_max: row.armor_mdc_max },
+			combat: { initiative_bonus: row.initiative_bonus, strike_bonus: row.strike_bonus, parry_bonus: row.parry_bonus, dodge_bonus: row.dodge_bonus, roll_with_impact_bonus: row.roll_with_impact_bonus, damage_bonus: row.damage_bonus, apm: row.apm },
 			needs: { hunger: row.hunger, thirst: row.thirst, fatigue: row.fatigue },
 			internal_temp: row.internal_temp,
 			pulse_bpm: row.pulse_bpm,
@@ -900,10 +527,7 @@ export class GameStateService {
 			status_effects: JSON.parse(row.status_effects),
 			injuries: [],
 			pack_howl_remaining: row.pack_howl_remaining,
-			party_member:
-				row.party_member === undefined || row.party_member === null
-					? true
-					: row.party_member === 1,
+			party_member: row.party_member === undefined || row.party_member === null ? true : row.party_member === 1,
 		};
 	}
 }

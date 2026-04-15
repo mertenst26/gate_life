@@ -1,0 +1,8 @@
+id: rubble
+name: Rubble
+movement_cost: 2.0
+cover: partial
+elevation: 0
+hazard_effect: null
+tile_color: "#696969"
+tile_label: "R"

@@ -1,0 +1,5 @@
+id: vehicle
+label: Vehicle
+icon: car
+spawn_as: vehicle
+hostile: false

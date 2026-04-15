@@ -1,0 +1,5 @@
+id: poi
+label: Point of Interest
+icon: pin
+spawn_as: poi
+hostile: false

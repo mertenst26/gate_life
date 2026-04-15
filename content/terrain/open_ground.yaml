@@ -1,0 +1,8 @@
+id: open_ground
+name: Open Ground
+movement_cost: 1.0
+cover: null
+elevation: 0
+hazard_effect: null
+tile_color: "#8B7355"
+tile_label: ""

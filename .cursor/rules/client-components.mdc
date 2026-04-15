@@ -1,0 +1,43 @@
+---
+description: Client-side React component conventions and structure
+globs: ["client/src/**/*.tsx", "client/src/**/*.ts"]
+---
+
+# Client Components
+
+## Architecture
+- **Routing**: `react-router-dom` in `App.tsx` — `/` (Lobby), `/game/:campaignId` (Game), `/builder/:scenarioId?` (Builder)
+- **State**: `GameContext.tsx` with `useReducer` — central game state
+- **API**: `hooks/useApi.ts` — REST client functions
+- **WebSocket**: `hooks/useWebSocket.ts` — real-time message handling
+
+## Component Size Limits
+When a component exceeds ~500 lines, split it:
+- Extract sub-components into a directory (`ComponentName/index.tsx` + sub-files)
+- Extract hooks into `useXxx.ts` files in the same directory
+- The index file should be a thin assembler
+
+## Where State Lives
+- **Global game state** → `GameContext` (campaign, session, party, messages)
+- **Local UI state** → component-level `useState` (modals, form inputs, selected tabs)
+- **Persistent identity** → `localStorage` (userId, characterId)
+- **URL state** → `react-router-dom` params (campaignId, scenarioId)
+
+## Adding a New UI Panel
+1. Create the component in `client/src/components/`
+2. Import and render in the appropriate layout (`GameLayout` for in-game, `Lobby` for lobby)
+3. If it needs game state, use `useGame()` from `GameContext`
+4. If it needs API calls, use the `api` object from `useApi`
+
+## Icon Registry
+Use `client/src/lib/iconRegistry.ts` for entity/class/icon mappings:
+```typescript
+import { getEntityIcon, getClassIcon } from '../lib/iconRegistry';
+const { emoji, label } = getEntityIcon('enemy', 'zombie');
+```
+
+## Conventions
+- Named exports only (no default exports)
+- Functional components with TypeScript
+- Props interfaces defined alongside the component
+- Use `useCallback` and `useMemo` for expensive computations passed as props

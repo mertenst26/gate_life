@@ -175,9 +175,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 }
 
 const STORAGE_KEY_CHAR = "gate_life_my_character_id";
+const STORAGE_KEY_USER = "gate_life_user_id";
+
+function getOrCreateUserId(): string {
+	let id = localStorage.getItem(STORAGE_KEY_USER);
+	if (!id) {
+		id = `player-${crypto.randomUUID()}`;
+		localStorage.setItem(STORAGE_KEY_USER, id);
+	}
+	return id;
+}
 
 const initialState: GameState = {
-	userId: "player-1",
+	userId: getOrCreateUserId(),
 	role: "player",
 	campaign: null,
 	session: null,

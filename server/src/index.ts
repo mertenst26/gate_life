@@ -14,6 +14,10 @@ import { terrainRoutes } from './routes/terrain.js';
 import { scenarioRoutes } from './routes/scenarios.js';
 import { wsHandler } from './ws/handler.js';
 import { loadTemplates } from './services/ClassTemplateService.js';
+import { loadEnemyTypes } from './services/EnemyTypeRegistry.js';
+import { loadEntityTypes } from './services/EntityTypeRegistry.js';
+import { loadItemTemplates } from './services/ItemRegistry.js';
+import { loadTerrainTypes } from './services/TerrainTypeRegistry.js';
 
 const PORT = parseInt(process.env.PORT || '3003', 10);
 
@@ -26,6 +30,10 @@ async function main() {
 
   runMigrations();
   loadTemplates();
+  loadEnemyTypes();
+  loadItemTemplates();
+  loadTerrainTypes();
+  loadEntityTypes();
 
   // REST routes
   app.register(campaignRoutes, { prefix: '/api/campaigns' });

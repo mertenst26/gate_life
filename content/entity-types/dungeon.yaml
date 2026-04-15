@@ -1,0 +1,5 @@
+id: dungeon
+label: Dungeon
+icon: castle
+spawn_as: dungeon
+hostile: false

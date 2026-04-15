@@ -1,0 +1,8 @@
+id: water_shallow
+name: Shallow Water
+movement_cost: 2.0
+cover: null
+elevation: -1
+hazard_effect: null
+tile_color: "#4682B4"
+tile_label: "~"

@@ -1,0 +1,20 @@
+id: shambling_corpse
+name: Shambling Corpse
+enemy_type: hostile
+icon_type: zombie
+hp_max: 25
+sdc_max: 30
+mdc_max: null
+apm: 2
+initiative_bonus: -1
+strike_bonus: 1
+parry_bonus: 0
+dodge_bonus: -2
+damage: "2d6"
+damage_type: sdc
+abilities: []
+loot_table:
+  - name: Tattered Rags
+    weight: 1
+    rarity: common
+behavior_hints: "Slow, shambling movement. Always attacks nearest target. No tactical intelligence."

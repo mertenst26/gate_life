@@ -147,5 +147,10 @@ export function runMigrations(): void {
     /* json_extract unavailable on very old SQLite — skip */
   }
 
+  if (!hasColumn('combatants', 'user_id')) {
+    db.exec('ALTER TABLE combatants ADD COLUMN user_id TEXT');
+    console.log('[db] Migration: added combatants.user_id');
+  }
+
   console.log('[db] Schema applied successfully');
 }

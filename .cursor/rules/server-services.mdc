@@ -1,0 +1,35 @@
+---
+description: Server-side service architecture and boundaries
+globs: ["server/src/services/**/*.ts"]
+---
+
+# Server Services
+
+## Architecture
+
+- `GameStateService` is the central facade for DB access. It delegates to:
+  - `CampaignSessionService` — campaign and session CRUD
+  - `EnemyService` — enemy CRUD, detection, damage
+
+- AI GM is split across `services/gm/`:
+  - `shared.ts` — prompts, marker processing, tactical mode entry
+  - `NarrationService.ts` — scene descriptions, enemy sighting narration
+  - `GmReplyService.ts` — player reply handling, marker-driven side effects
+  - `AiGmService.ts` — thin facade exposing `aiGm` singleton
+
+## Rules
+
+- **Do NOT** add new CRUD methods directly to `GameStateService`. Extract into a focused service (like `EnemyService`) and have `GameStateService` delegate.
+- **Do NOT** put business logic in route handlers. Routes should validate input, call a service, and return the result.
+- **Do NOT** import `getDb()` in WebSocket handlers. Use service methods instead.
+- **Do NOT** modify AI prompts in `shared.ts` without testing with actual LLM responses.
+- Services are singletons exported as `const myService = new MyService()`.
+- Content registries follow the pattern: load YAML files at startup, expose `get(id)` and `list()`.
+
+## Adding a New Service
+
+1. Create `server/src/services/MyService.ts`
+2. Export a singleton instance
+3. If it needs DB access, import `getDb` from `../db/connection.js`
+4. If it's a content registry, follow `ClassTemplateService.ts` pattern
+5. Wire up in `index.ts` if it needs startup initialization

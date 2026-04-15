@@ -1,12 +1,17 @@
+/** Session FSM states: charCreate → conversation → tactical / travel / rest. */
 export type GameMode =
 	| "charCreate"
 	| "conversation"
 	| "tactical"
 	| "travel"
 	| "rest";
+/** Whether a combatant is controlled by a human player or an AI agent. */
 export type CombatantKind = "human" | "agent";
+/** Lifecycle status of a combatant. Dead combatants are excluded from party queries. */
 export type CombatantStatus = "alive" | "unconscious" | "dead";
+/** Whether the Game Master role is filled by a human player or the Anthropic AI. */
 export type GmKind = "human" | "agent";
+/** Chat message categorization — controls rendering style and AI processing. */
 export type MessageType =
 	| "gm_narration"
 	| "player_speech"
@@ -15,16 +20,22 @@ export type MessageType =
 	| "system_alert"
 	| "gm_private"
 	| "follow_request";
+/** Who can see a message or event. */
 export type Visibility = "party" | "gm" | "gm_only_agent_reasoning";
+/** Rifts damage system: SDC (Structural) or MD (Mega Damage). 1 MD = 100 SDC. */
 export type DamageType = "sdc" | "md";
+/** Tactical grid terrain classification. Extended via content/terrain/ YAML. */
 export type TerrainType =
 	| "open"
 	| "rough"
 	| "hazardous"
 	| "impassable"
 	| "elevated";
+/** Cover level — affects dodge/parry bonuses in tactical mode. */
 export type CoverType = "partial" | "full" | null;
+/** Wound severity, affects healing time and pain penalties. */
 export type InjurySeverity = "minor" | "moderate" | "severe" | "critical";
+/** Equipment slot classification. Determines equip behavior and UI grouping. */
 export type ItemType =
 	| "weapon_melee"
 	| "weapon_ranged"
@@ -34,6 +45,7 @@ export type ItemType =
 	| "container"
 	| "misc"
 	| "special";
+/** Item rarity tier — affects loot table weighting and value. */
 export type Rarity = "common" | "uncommon" | "rare" | "legendary" | "artifact";
 
 /** Special item ability types that can be triggered by using the item */
@@ -63,6 +75,7 @@ export interface ItemAbility {
 	linked_entity_names?: string[];
 }
 
+/** Rifts-style character attributes (IQ, ME, MA, PS, PP, PE, PB, SPD). */
 export interface Attributes {
 	iq: number;
 	me: number;
@@ -71,10 +84,13 @@ export interface Attributes {
 	pp: number;
 	pe: number;
 	pb: number;
+	/** Bipedal movement speed — determines feet per melee round (SPD × 5). */
 	spd_bipedal: number;
+	/** Quadruped movement speed (0 for classes that don't use it). */
 	spd_quadruped: number;
 }
 
+/** Combat modifiers applied to dice rolls. APM = Actions Per Melee (turns per round). */
 export interface CombatBonuses {
 	initiative_bonus: number;
 	strike_bonus: number;
@@ -82,22 +98,28 @@ export interface CombatBonuses {
 	dodge_bonus: number;
 	roll_with_impact_bonus: number;
 	damage_bonus: number;
+	/** Actions Per Melee — number of attacks/actions per combat round. */
 	apm: number;
 }
 
+/** Current and max pools for HP, SDC, ISP (psionics), PPE (magic), and armor MDC. */
 export interface Vitals {
 	hp_current: number;
 	hp_max: number;
 	sdc_current: number;
 	sdc_max: number;
+	/** Inner Strength Points (psionic energy pool). */
 	isp_current: number;
 	isp_max: number;
+	/** Potential Psychic Energy (magic energy pool). */
 	ppe_current: number;
 	ppe_max: number;
+	/** Mega Damage Capacity on equipped armor. */
 	armor_mdc_current: number;
 	armor_mdc_max: number;
 }
 
+/** Survival needs tracked per combatant (0 = satisfied, higher = more urgent). */
 export interface Needs {
 	hunger: number;
 	thirst: number;
@@ -147,6 +169,7 @@ export interface PsionicPower {
 	save?: string;
 }
 
+/** A player character or AI agent in the party, with full stats, inventory, and position. */
 export interface Combatant {
 	id: string;
 	campaign_id: string;
@@ -280,12 +303,14 @@ export interface AgentGmConfig {
 	quest_giver_progress?: Record<string, QuestGiverProgressEntry>;
 }
 
+/** In-game time tracked per campaign. Advanced by WorldClockService. */
 export interface WorldClock {
 	day: number;
 	hour: number;
 	minute: number;
 }
 
+/** An active play session within a campaign. Tracks mode, turn state, and terrain origin. */
 export interface Session {
 	id: string;
 	campaign_id: string;
@@ -299,11 +324,17 @@ export interface Session {
 	terrain_origin_lng?: number | null;
 }
 
+/** Tactical combat state: initiative order, current actor, round counter. */
 export interface TurnState {
+	/** Combatant IDs sorted by initiative roll (descending). */
 	turn_order: string[];
+	/** Index into turn_order of the combatant whose turn it is. */
 	current_actor_index: number;
+	/** Current combat round (increments when turn_order wraps). */
 	round: number;
+	/** Monotonic tick counter across all turns. */
 	tick: number;
+	/** Remaining actions per combatant ID this round. */
 	action_budget: Record<string, number>;
 	pending_input?: PendingInput;
 }
@@ -320,6 +351,7 @@ export interface PendingInput {
 	timer_duration_ms?: number;
 }
 
+/** A single chat message in the game log (narration, player speech, system alerts). */
 export interface ChatMessage {
 	id: string;
 	campaign_id: string;
@@ -364,6 +396,7 @@ export interface DiceRoll {
 	fumble?: boolean;
 }
 
+/** A scenario entity on the tactical board (enemy, NPC, POI, vehicle). Despite the name, covers all entity types. */
 export interface Enemy {
 	id: string;
 	session_id: string;

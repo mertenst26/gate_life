@@ -1,0 +1,43 @@
+---
+description: How to add a new WebSocket message type end-to-end
+globs: ["server/src/ws/**/*.ts", "client/src/hooks/useWebSocket.ts", "packages/shared/src/types.ts"]
+---
+
+# WebSocket Messages
+
+## Adding a New Message Type
+
+### 1. Define the type (shared)
+Add the new message type to the `WSMessage` type union in `packages/shared/src/types.ts`.
+
+### 2. Handle on server (ws/handlers/)
+Choose the appropriate handler file based on the message's domain:
+- `joinSession.ts` — session lifecycle
+- `chat.ts` — chat and communication
+- `tactical.ts` — tactical/combat actions
+
+Create a handler function:
+```typescript
+export async function handleMyMessage(
+  clientId: string,
+  client: ConnectedClient,
+  payload: any,
+): Promise<void> { ... }
+```
+
+### 3. Register in router (ws/handler.ts)
+Add a case to the `handleClientMessage` switch:
+```typescript
+case "my_message":
+  return handleMyMessage(clientId, client, msg.payload);
+```
+
+### 4. Subscribe on client (useWebSocket.ts)
+Add handling in the WebSocket message handler in `useWebSocket.ts` and dispatch to `GameContext`.
+
+## Conventions
+- All messages have `{ type, payload, timestamp }` shape
+- Inbound = client → server, Outbound = server → client
+- Use `broadcastToSession()` (from `ws/clients.ts`) for outbound messages
+- Error responses use `type: "error"` with `{ message }` payload
+- Import `ConnectedClient` from `../clients.js`, not from handler.ts

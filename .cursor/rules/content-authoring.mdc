@@ -1,0 +1,42 @@
+---
+description: How to create new YAML content (class, enemy, item, terrain, entity-type)
+globs: ["content/**/*.yaml", "content/**/*.yml", "class_templates/**/*.yaml"]
+---
+
+# Content Authoring
+
+Gate Life uses YAML files for game content definitions. All registries load at server startup.
+
+## Adding Content
+
+### Character Class
+1. Create `class_templates/<class_id>.yaml` with required fields (see `dog_boy.yaml`)
+2. Optionally create `class_templates/<class_id>_creation.yaml` for rolled creation
+3. If custom creation logic is needed, add a handler in `CharacterCreationService.ts`
+4. No other code changes needed — class appears in `GET /api/state/templates`
+
+### Enemy Type
+1. Create `content/enemies/<enemy_id>.yaml`
+2. Required fields: `id`, `name`, `enemy_type`, `hp_max`, `apm`, `damage`, `damage_type`
+3. Available via `EnemyTypeRegistry.getEnemyType(id)`
+
+### Item
+1. Create `content/items/<item_id>.yaml`
+2. Required fields: `id`, `name`, `type`, `weight`, `value`, `rarity`
+3. Available via `ItemRegistry.getItemTemplate(id)`
+
+### Terrain Type
+1. Create `content/terrain/<type_id>.yaml`
+2. Required fields: `id`, `name`, `movement_cost`, `cover`, `elevation`, `tile_color`
+3. Available via `TerrainTypeRegistry.getTerrainType(id)`
+
+### Entity Type
+1. Create `content/entity-types/<type_id>.yaml`
+2. Required fields: `id`, `label`, `icon`, `spawn_as`, `hostile`
+3. Also add to `ScenarioEntityType` union in `packages/shared/src/types.ts`
+
+## Conventions
+- File names use snake_case matching the `id` field
+- All YAML files must have a top-level `id` field
+- Use existing files as templates when creating new content
+- Restart server after adding/modifying YAML files

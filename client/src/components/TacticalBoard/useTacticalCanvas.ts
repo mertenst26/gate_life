@@ -3,18 +3,16 @@ import {
 	type Enemy,
 	enemyMapTokenKind,
 } from "@gate-life/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useGame } from "../context/GameContext";
-import { api } from "../hooks/useApi";
-import { EnemyInspector } from "./EnemyInspector";
+import { useCallback, useEffect, useRef } from "react";
 
-const CELL = 28; // Smaller cells to fit more area on screen
-const COLS = 41; // Increased to show ~20 cells in each direction (400ft radius)
-const ROWS = 33; // Increased to show ~16 cells in each direction
-const W = COLS * CELL;
-const H = ROWS * CELL;
+// ── Shared constants (exported for useTacticalInput) ─────────────────────────
+export const CELL = 28;
+export const COLS = 41;
+export const ROWS = 33;
+export const W = COLS * CELL;
+export const H = ROWS * CELL;
 
-function maxMove(spd: number) {
+export function maxMove(spd: number) {
 	return Math.round((spd * 5) / 10);
 }
 
@@ -51,33 +49,33 @@ function facingAngle(facing: string | undefined): number | null {
 	return FACING_ANGLES[facing.toUpperCase()] ?? null;
 }
 
-function gridToCanvas(gx: number, gy: number, ox: number, oy: number) {
+export function gridToCanvas(gx: number, gy: number, ox: number, oy: number) {
 	const col = gx - ox;
 	const row = ROWS - 1 - (gy - oy);
 	return { x: col * CELL + CELL / 2, y: row * CELL + CELL / 2 };
 }
 
-function canvasToGrid(cx: number, cy: number, ox: number, oy: number) {
+export function canvasToGrid(cx: number, cy: number, ox: number, oy: number) {
 	const col = Math.floor(cx / CELL);
 	const row = Math.floor(cy / CELL);
 	return { gx: ox + col, gy: oy + (ROWS - 1 - row) };
 }
 
-// ── Terrain types for drawing ──────────────────────────────────────────────
-interface TerrainCell {
+// ── Terrain types ────────────────────────────────────────────────────────────
+export interface TerrainCell {
 	x: number;
 	y: number;
 	terrain_type: string;
 	metadata?: Record<string, unknown>;
 }
 
-type TerrainMap = Map<string, TerrainCell>;
+export type TerrainMap = Map<string, TerrainCell>;
 
-function cellKey(x: number, y: number) {
+export function cellKey(x: number, y: number) {
 	return `${x},${y}`;
 }
 
-// ── Entity type appearance ────────────────────────────────────────────────────
+// ── Entity type appearance ───────────────────────────────────────────────────
 function entityColor(
 	entity: Pick<Enemy, "enemy_type" | "icon_type" | "quest_poi">,
 ): string {
@@ -93,7 +91,7 @@ function entityColor(
 		case "poi":
 			return "#f39c12";
 		default:
-			return "#c0392b"; // hostile red
+			return "#c0392b";
 	}
 }
 
@@ -134,7 +132,7 @@ function draw(
 	// Debug: Sample terrain cells
 	let roadCount = 0;
 	let buildingCount = 0;
-	for (const [key, cell] of terrain.entries()) {
+	for (const [, cell] of terrain.entries()) {
 		if (cell.metadata?.road) roadCount++;
 		if (cell.terrain_type === "impassable") buildingCount++;
 	}
@@ -142,7 +140,6 @@ function draw(
 		console.log(
 			`[tactical draw] terrain.size=${terrain.size} roads=${roadCount} buildings=${buildingCount} ox=${ox} oy=${oy}`,
 		);
-		// Sample a few cells
 		const samples = [
 			terrain.get(cellKey(ox, oy)),
 			terrain.get(cellKey(ox + 5, oy + 5)),
@@ -162,10 +159,8 @@ function draw(
 			const cell = terrain.get(cellKey(gx, gy));
 
 			if (cell?.terrain_type === "impassable") {
-				// Building — clearly visible dark grey-brown fill
 				ctx.fillStyle = "#2c1f1f";
 				ctx.fillRect(px, py, CELL, CELL);
-				// Crosshatch (clipped to cell)
 				ctx.save();
 				ctx.beginPath();
 				ctx.rect(px, py, CELL, CELL);
@@ -179,12 +174,10 @@ function draw(
 					ctx.stroke();
 				}
 				ctx.restore();
-				// Visible border
 				ctx.strokeStyle = "#7a3a2a";
 				ctx.lineWidth = 1.5;
 				ctx.strokeRect(px + 1, py + 1, CELL - 2, CELL - 2);
 			} else if (cell?.metadata?.road) {
-				// Road — warm amber tint, clearly distinct from open ground
 				ctx.fillStyle = "#1e1c14";
 				ctx.fillRect(px, py, CELL, CELL);
 				ctx.fillStyle = "rgba(200,150,60,0.22)";
@@ -195,18 +188,15 @@ function draw(
 					CELL * 0.7,
 				);
 			} else {
-				// Normal open terrain — alternating chequer
 				const even = (gx + gy) % 2 === 0;
 				ctx.fillStyle = even ? "#111822" : "#0d1520";
 				ctx.fillRect(px, py, CELL, CELL);
 			}
 
-			// Grid lines
 			ctx.strokeStyle = "rgba(80,120,160,0.18)";
 			ctx.lineWidth = 0.5;
 			ctx.strokeRect(px, py, CELL, CELL);
 
-			// Axis emphasis
 			if (gx === 0 || gy === 0) {
 				ctx.strokeStyle = "rgba(100,160,220,0.25)";
 				ctx.lineWidth = 1;
@@ -245,7 +235,6 @@ function draw(
 						const cell = terrain.get(cellKey(gx, gy));
 						const blocked = cell?.terrain_type === "impassable";
 						if (blocked) {
-							// Red tint for blocked cells within range
 							ctx.fillStyle = "rgba(192,57,43,0.15)";
 						} else {
 							ctx.fillStyle = "rgba(241,196,15,0.10)";
@@ -258,7 +247,6 @@ function draw(
 	}
 
 	// ── Character tokens ──────────────────────────────────────────────────────
-	// Pre-compute stacking offsets for alive combatants sharing the same cell
 	const cellCounts = new Map<string, number>();
 	const cellIndex = new Map<string, number>();
 	for (const c of mapChars) {
@@ -288,7 +276,6 @@ function draw(
 		ctx.lineWidth = 1.5;
 		ctx.stroke();
 
-		// Red X over dead token
 		ctx.strokeStyle = "#c0392b";
 		ctx.lineWidth = 2.5;
 		ctx.lineCap = "round";
@@ -324,7 +311,6 @@ function draw(
 		const stackIdx = cellIndex.get(c.id) ?? 0;
 
 		const base = gridToCanvas(gx, gy, ox, oy);
-		// Spread stacked tokens in a small arc around the cell centre
 		const stackAngle = stackSize > 1 ? (stackIdx / stackSize) * Math.PI * 2 : 0;
 		const spread = stackSize > 1 ? CELL * 0.22 : 0;
 		const cx = base.x + Math.cos(stackAngle) * spread;
@@ -363,7 +349,6 @@ function draw(
 			ctx.lineWidth = 2.5;
 			ctx.lineCap = "round";
 			ctx.stroke();
-			// Tip dot
 			ctx.beginPath();
 			ctx.arc(ex, ey, 3, 0, Math.PI * 2);
 			ctx.fillStyle = isUnconscious
@@ -395,7 +380,6 @@ function draw(
 		ctx.textBaseline = "middle";
 		ctx.fillText(initials(c.name), cx, cy);
 
-		// Unconscious indicator: small tilde below initials
 		if (isUnconscious) {
 			ctx.fillStyle = "#d4a057";
 			ctx.font = "bold 8px monospace";
@@ -412,7 +396,6 @@ function draw(
 		ctx.textBaseline = "top";
 		ctx.fillText(c.name.slice(0, 8), cx, cy + r + 3);
 
-		// "ACTING" badge above active token
 		if (isActive) {
 			ctx.fillStyle = "#e67e22";
 			ctx.font = "bold 7px monospace";
@@ -448,7 +431,6 @@ function draw(
 		const symbol = isDead ? "☠" : entitySymbol(entity);
 
 		if (!isDead) {
-			// Glow ring (only for alive entities)
 			const grad = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r + 8);
 			grad.addColorStop(0, `${color}55`);
 			grad.addColorStop(1, "transparent");
@@ -457,12 +439,10 @@ function draw(
 			ctx.fillStyle = grad;
 			ctx.fill();
 
-			// Facing indicator — drawn before the circle body so it sits underneath
 			const entityFAngle = facingAngle(entity.facing);
 			if (entityFAngle !== null) {
-				// Vision cone: filled arc showing the 180° forward hemisphere
 				const coneRadius = r + 14;
-				const halfArc = Math.PI / 2; // 90° each side → 180° total
+				const halfArc = Math.PI / 2;
 				ctx.beginPath();
 				ctx.moveTo(cx, cy);
 				ctx.arc(
@@ -479,7 +459,6 @@ function draw(
 				ctx.lineWidth = 1;
 				ctx.stroke();
 
-				// Direction stick + tip dot
 				const stickEnd = r + 11;
 				const ex = cx + Math.cos(entityFAngle) * stickEnd;
 				const ey = cy + Math.sin(entityFAngle) * stickEnd;
@@ -497,7 +476,6 @@ function draw(
 			}
 		}
 
-		// Token body
 		ctx.beginPath();
 		ctx.arc(cx, cy, r, 0, Math.PI * 2);
 		ctx.fillStyle = isDead ? "#252525" : `${color}cc`;
@@ -506,20 +484,17 @@ function draw(
 		ctx.lineWidth = isDead ? 1.5 : 2;
 		ctx.stroke();
 
-		// Symbol
 		ctx.fillStyle = isDead ? "#888" : "#fff";
 		ctx.font = `bold ${Math.round(CELL * 0.32)}px sans-serif`;
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
 		ctx.fillText(symbol, cx, cy);
 
-		// Name label below
 		ctx.fillStyle = isDead ? "rgba(140,140,140,0.7)" : color;
 		ctx.font = "9px monospace";
 		ctx.textBaseline = "top";
 		ctx.fillText(entity.name.slice(0, 8), cx, cy + r + 3);
 
-		// HP label below name (or "DEAD" indicator)
 		if (isDead) {
 			ctx.fillStyle = "rgba(192,57,43,0.8)";
 			ctx.fillText("DEAD", cx, cy + r + 13);
@@ -531,125 +506,49 @@ function draw(
 	}
 }
 
-function originForCenter(cx: number, cy: number) {
+export function originForCenter(cx: number, cy: number) {
 	return { ox: cx - Math.floor(COLS / 2), oy: cy - Math.floor(ROWS / 2) };
 }
 
-// ── Component ──────────────────────────────────────────────────────────────────
-export function TacticalBoard({ height }: { height?: number }) {
-	const { state, actions, dispatch } = useGame();
-	const turnState = state.session?.turn_state ?? null;
-	const myId = state.myCharacterId;
-	const activeId = turnState?.turn_order[turnState.current_actor_index] ?? null;
-	const canMove = activeId !== null && activeId === myId;
+// ── Hook ─────────────────────────────────────────────────────────────────────
+interface UseTacticalCanvasParams {
+	canvasRef: { current: HTMLCanvasElement | null };
+	originRef: { current: { ox: number; oy: number } };
+	terrainRef: { current: TerrainMap };
+	party: Combatant[];
+	worldNpcs: Combatant[];
+	detectedEntities: Enemy[];
+	activeId: string | null;
+	myId: string | null | undefined;
+	selectedId: string | null;
+	terrainLoaded: boolean;
+	currentMode: string | undefined;
+}
 
-	const canvasRef = useRef<HTMLCanvasElement>(null);
-	const originRef = useRef({ ox: -10, oy: -8 });
-	const partyRef = useRef(state.party);
-	const worldNpcsRef = useRef(state.worldNpcs);
-	const detectedEntitiesRef = useRef(state.detectedEntities);
+export function useTacticalCanvas({
+	canvasRef,
+	originRef,
+	terrainRef,
+	party,
+	worldNpcs,
+	detectedEntities,
+	activeId,
+	myId,
+	selectedId,
+	terrainLoaded,
+	currentMode,
+}: UseTacticalCanvasParams) {
+	const partyRef = useRef(party);
+	const worldNpcsRef = useRef(worldNpcs);
+	const detectedEntitiesRef = useRef(detectedEntities);
 	const activeIdRef = useRef(activeId);
-	const myIdRef = useRef(myId);
-	const selectedIdRef = useRef<string | null>(null);
-	const sendMoveRef = useRef(actions.sendTacticalMove);
-	const terrainRef = useRef<TerrainMap>(new Map());
+	const selectedIdRef = useRef(selectedId);
 
-	partyRef.current = state.party;
-	worldNpcsRef.current = state.worldNpcs;
-	detectedEntitiesRef.current = state.detectedEntities;
+	partyRef.current = party;
+	worldNpcsRef.current = worldNpcs;
+	detectedEntitiesRef.current = detectedEntities;
 	activeIdRef.current = activeId;
-	myIdRef.current = myId;
-	sendMoveRef.current = actions.sendTacticalMove;
-
-	console.log(
-		"[TacticalBoard] Render - detectedEntities count:",
-		state.detectedEntities.length,
-	);
-	if (state.detectedEntities.length > 0) {
-		console.log(
-			"[TacticalBoard] Detected entities:",
-			state.detectedEntities.map((e) => ({
-				name: e.name,
-				id: e.id,
-				tactical_x: e.tactical_x,
-				tactical_y: e.tactical_y,
-				detected: e.detected,
-				status: e.status,
-			})),
-		);
-	}
-
-	const [selectedId, setSelectedId] = useState<string | null>(null);
-	const [moveError, setMoveError] = useState<string | null>(null);
-	const [hovered, setHovered] = useState<{ gx: number; gy: number } | null>(
-		null,
-	);
-	const [terrainLoaded, setTerrainLoaded] = useState(false);
-	const [inspectingEntity, setInspectingEntity] = useState<string | null>(null);
-
-	useEffect(() => {
-		selectedIdRef.current = selectedId;
-	}, [selectedId]);
-
-	// ── Fetch terrain when session is available (grid origin comes from campaign on server) ──
-	useEffect(() => {
-		const sessionId = state.session?.id;
-		if (!sessionId) {
-			console.log("[tactical] No session ID, skipping terrain fetch");
-			return;
-		}
-
-		const me = state.party.find((c) => c.id === myId);
-		const cx = me?.tactical_x ?? 0;
-		const cy = me?.tactical_y ?? 0;
-
-		console.log(
-			`[tactical] Fetching terrain for session ${sessionId.slice(0, 8)} at (${cx},${cy}) myId=${myId?.slice(0, 8)}`,
-		);
-
-		let cancelled = false;
-		setTerrainLoaded(false);
-
-		api
-			.getTerrain(sessionId, cx, cy, 60)
-			.then((result) => {
-				if (cancelled) return;
-				console.log(
-					`[tactical] API returned ${result.tiles.length} tiles, ${result.buildings.length} buildings, ${result.roads.length} roads`,
-				);
-				const map = new Map<string, TerrainCell>();
-				for (const tile of result.tiles) {
-					map.set(cellKey(tile.x, tile.y), tile);
-				}
-				terrainRef.current = map;
-				setTerrainLoaded(true);
-				// Sample the first few tiles to verify data structure
-				const sampleTiles = result.tiles.slice(0, 5);
-				const tilesWithRoads = result.tiles.filter((t) => t.metadata?.road);
-				console.log(
-					`[tactical] Loaded ${result.tiles.length} terrain cells (${result.buildings.length} buildings, ${result.roads.length} roads)`,
-				);
-				console.log(
-					`[tactical] Tiles with road metadata: ${tilesWithRoads.length}`,
-				);
-				console.log("[tactical] Sample tiles:", sampleTiles);
-				if (tilesWithRoads.length > 0) {
-					console.log(
-						"[tactical] Sample road tiles:",
-						tilesWithRoads.slice(0, 3),
-					);
-				}
-			})
-			.catch((err) => {
-				if (cancelled) return;
-				console.error("[tactical] Failed to load terrain:", err);
-				setTerrainLoaded(true);
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [state.session?.id, myId, state.party]);
+	selectedIdRef.current = selectedId;
 
 	// ── Redraw ────────────────────────────────────────────────────────────────
 	const redraw = useCallback(() => {
@@ -671,20 +570,21 @@ export function TacticalBoard({ height }: { height?: number }) {
 			oy,
 			terrain,
 		);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	useEffect(() => {
 		console.log(
 			"[tactical] redraw — party positions:",
-			state.party
+			party
 				.map((c) => `${c.name.slice(0, 6)}:(${c.tactical_x},${c.tactical_y})`)
 				.join(" | "),
 		);
 		redraw();
 	}, [
-		state.party,
-		state.worldNpcs,
-		state.detectedEntities,
+		party,
+		worldNpcs,
+		detectedEntities,
 		selectedId,
 		activeId,
 		terrainLoaded,
@@ -693,8 +593,8 @@ export function TacticalBoard({ height }: { height?: number }) {
 
 	// ── Center on MY character on mount ─────────────────────────────────────
 	useEffect(() => {
-		const me = state.party.find((c) => c.id === myId);
-		const target = me ?? (state.party.length > 0 ? state.party[0] : null);
+		const me = party.find((c) => c.id === myId);
+		const target = me ?? (party.length > 0 ? party[0] : null);
 		if (target) {
 			const { ox, oy } = originForCenter(
 				target.tactical_x ?? 0,
@@ -707,10 +607,10 @@ export function TacticalBoard({ height }: { height?: number }) {
 	}, []);
 
 	// ── Re-center when MY position changes ──────────────────────────────────
-	const meX = state.party.find((c) => c.id === myId)?.tactical_x;
-	const meY = state.party.find((c) => c.id === myId)?.tactical_y;
+	const meX = party.find((c) => c.id === myId)?.tactical_x;
+	const meY = party.find((c) => c.id === myId)?.tactical_y;
 	useEffect(() => {
-		const me = state.party.find((c) => c.id === myId);
+		const me = party.find((c) => c.id === myId);
 		if (me) {
 			const { ox, oy } = originForCenter(
 				me.tactical_x ?? 0,
@@ -719,28 +619,25 @@ export function TacticalBoard({ height }: { height?: number }) {
 			originRef.current = { ox, oy };
 			redraw();
 		}
-	}, [meX, meY, myId, redraw]);
+	}, [meX, meY, myId, redraw, party, originRef]);
 
 	// ── Pan to show the whole party whenever any combatant moves ─────────────
-	// This keeps all party members in view regardless of whose turn it is.
-	const partyPositionKey = [...state.party, ...state.worldNpcs]
+	const partyPositionKey = [...party, ...worldNpcs]
 		.map((c) => `${c.id}:${c.tactical_x ?? 0},${c.tactical_y ?? 0}`)
 		.join("|");
 
 	useEffect(() => {
-		if (state.party.length === 0 && state.worldNpcs.length === 0) return;
-		const alive = [...state.party, ...state.worldNpcs].filter(
+		if (party.length === 0 && worldNpcs.length === 0) return;
+		const alive = [...party, ...worldNpcs].filter(
 			(c) => c.status !== "dead",
 		);
 		if (alive.length === 0) return;
 
-		// Compute centroid of all alive party members
 		const sumX = alive.reduce((s, c) => s + (c.tactical_x ?? 0), 0);
 		const sumY = alive.reduce((s, c) => s + (c.tactical_y ?? 0), 0);
 		const centX = Math.round(sumX / alive.length);
 		const centY = Math.round(sumY / alive.length);
 
-		// Check if any member is outside the current viewport
 		const { ox, oy } = originRef.current;
 		const margin = 2;
 		const anyOutside = alive.some((c) => {
@@ -763,13 +660,13 @@ export function TacticalBoard({ height }: { height?: number }) {
 	}, [partyPositionKey, redraw]);
 
 	// ── Pan to show detected enemies when they appear in tactical mode ───────
-	const detectedEntitiesKey = state.detectedEntities
+	const detectedEntitiesKey = detectedEntities
 		.map((e) => `${e.id}:${e.tactical_x ?? 0},${e.tactical_y ?? 0}`)
 		.join("|");
 
 	useEffect(() => {
-		if (state.session?.current_mode !== "tactical") return;
-		const hostileEntities = state.detectedEntities.filter(
+		if (currentMode !== "tactical") return;
+		const hostileEntities = detectedEntities.filter(
 			(e) =>
 				e.status !== "dead" &&
 				e.tactical_x != null &&
@@ -780,12 +677,11 @@ export function TacticalBoard({ height }: { height?: number }) {
 		);
 		if (hostileEntities.length === 0) return;
 
-		const alive = [...state.party, ...state.worldNpcs].filter(
+		const alive = [...party, ...worldNpcs].filter(
 			(c) => c.status !== "dead",
 		);
 		if (alive.length === 0) return;
 
-		// Combine party + enemies to find bounding box
 		const allPositions = [
 			...alive.map((c) => ({ x: c.tactical_x ?? 0, y: c.tactical_y ?? 0 })),
 			...hostileEntities.map((e) => ({ x: e.tactical_x!, y: e.tactical_y! })),
@@ -796,11 +692,9 @@ export function TacticalBoard({ height }: { height?: number }) {
 		const minY = Math.min(...allPositions.map((p) => p.y));
 		const maxY = Math.max(...allPositions.map((p) => p.y));
 
-		// Calculate center of the bounding box
 		const centX = Math.round((minX + maxX) / 2);
 		const centY = Math.round((minY + maxY) / 2);
 
-		// Check if all entities fit in current viewport
 		const { ox, oy } = originRef.current;
 		const margin = 2;
 		const anyOutside = allPositions.some((p) => {
@@ -823,309 +717,7 @@ export function TacticalBoard({ height }: { height?: number }) {
 			redraw();
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [detectedEntitiesKey, state.session?.current_mode, redraw]);
+	}, [detectedEntitiesKey, currentMode, redraw]);
 
-	// Deselect if not your turn
-	useEffect(() => {
-		if (activeId !== myId) setSelectedId(null);
-	}, [activeId, myId]);
-
-	// ── Click handler ────────────────────────────────────────────────────────
-	const onClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-		const canvas = canvasRef.current;
-		if (!canvas) return;
-		const rect = canvas.getBoundingClientRect();
-		const px = e.clientX - rect.left;
-		const py = e.clientY - rect.top;
-		const { ox, oy } = originRef.current;
-		const { gx, gy } = canvasToGrid(px, py, ox, oy);
-
-		const curActiveId = activeIdRef.current;
-		const curMyId = myIdRef.current;
-		const curSel = selectedIdRef.current;
-		const party = partyRef.current;
-
-		console.log(
-			`[click] px=${Math.round(px)},py=${Math.round(py)} → grid(${gx},${gy}) | activeId=${curActiveId?.slice(-4)} myId=${curMyId?.slice(-4)} sel=${curSel?.slice(-4) ?? "none"}`,
-		);
-
-		// Replicate stacking offsets so hit-test matches drawn positions
-		const cellCounts2 = new Map<string, number>();
-		const cellIndex2 = new Map<string, number>();
-		for (const c of party) {
-			if (c.status === "dead") continue;
-			const k = `${c.tactical_x ?? 0},${c.tactical_y ?? 0}`;
-			cellIndex2.set(c.id, cellCounts2.get(k) ?? 0);
-			cellCounts2.set(k, (cellCounts2.get(k) ?? 0) + 1);
-		}
-
-		// Hit-test tokens using the same offset math as draw()
-		for (const c of party) {
-			if (c.status === "dead") continue;
-			const cgx = c.tactical_x ?? 0;
-			const cgy = c.tactical_y ?? 0;
-			const base = gridToCanvas(cgx, cgy, ox, oy);
-			const stackSize = cellCounts2.get(`${cgx},${cgy}`) ?? 1;
-			const stackIdx = cellIndex2.get(c.id) ?? 0;
-			const angle = stackSize > 1 ? (stackIdx / stackSize) * Math.PI * 2 : 0;
-			const spread = stackSize > 1 ? CELL * 0.22 : 0;
-			const tcx = base.x + Math.cos(angle) * spread;
-			const tcy = base.y + Math.sin(angle) * spread;
-			const hitRadius = CELL * 0.38 + 4;
-
-			if (Math.hypot(px - tcx, py - tcy) <= hitRadius) {
-				console.log(
-					`[click] hit token: ${c.name} (${c.id.slice(-4)}) | isActive=${c.id === curActiveId} isMine=${c.id === curMyId}`,
-				);
-				if (c.id === curActiveId && c.id === curMyId) {
-					setSelectedId((prev) => {
-						const next = prev === c.id ? null : c.id;
-						console.log(`[click] selecting: ${next?.slice(-4) ?? "none"}`);
-						return next;
-					});
-					setMoveError(null);
-				} else {
-					const reason =
-						c.id !== curActiveId
-							? `It's ${party.find((p) => p.id === curActiveId)?.name ?? "someone else"}'s turn (active:${curActiveId?.slice(-4)}, me:${curMyId?.slice(-4)})`
-							: "Not your character";
-					console.log(`[click] blocked: ${reason}`);
-					setMoveError(reason);
-					setTimeout(() => setMoveError(null), 3000);
-				}
-				return;
-			}
-		}
-
-		// Hit-test detected entities (enemies, friendlies, NPCs, etc.)
-		const entities = detectedEntitiesRef.current;
-		for (const entity of entities) {
-			const egx = entity.tactical_x ?? null;
-			const egy = entity.tactical_y ?? null;
-			if (egx == null || egy == null) continue;
-
-			const base = gridToCanvas(egx, egy, ox, oy);
-			const hitRadius = CELL * 0.36 + 4;
-
-			if (Math.hypot(px - base.x, py - base.y) <= hitRadius) {
-				console.log(
-					`[click] hit entity: ${entity.name} (${entity.id.slice(-4)})`,
-				);
-				setInspectingEntity(entity.id);
-				return;
-			}
-		}
-
-		// Clicked empty cell — attempt move if a token is selected
-		console.log(
-			`[click] cell click → sel=${curSel?.slice(-4) ?? "none"} canMove=${curActiveId === curMyId}`,
-		);
-		if (!curSel || curActiveId !== curMyId) {
-			if (!curSel)
-				console.log("[click] no token selected — click your token first");
-			else
-				console.log(
-					`[click] not your turn (active:${curActiveId?.slice(-4)} me:${curMyId?.slice(-4)})`,
-				);
-			return;
-		}
-
-		const sel = party.find((c) => c.id === curSel);
-		if (!sel) {
-			console.log("[click] selected combatant not found in party");
-			return;
-		}
-
-		// Check impassable terrain
-		const targetCell = terrainRef.current.get(cellKey(gx, gy));
-		if (targetCell?.terrain_type === "impassable") {
-			console.log(`[click] blocked by terrain at (${gx},${gy})`);
-			setMoveError("Blocked: building");
-			setTimeout(() => setMoveError(null), 3000);
-			return;
-		}
-
-		const range = maxMove(sel.attributes.spd_bipedal);
-		const moveDist = Math.sqrt(
-			(gx - (sel.tactical_x ?? 0)) ** 2 + (gy - (sel.tactical_y ?? 0)) ** 2,
-		);
-		console.log(
-			`[click] move attempt: (${sel.tactical_x},${sel.tactical_y}) → (${gx},${gy}) dist=${moveDist.toFixed(1)} range=${range} spd=${sel.attributes.spd_bipedal}`,
-		);
-
-		if (moveDist > range + 0.5) {
-			console.log(`[click] too far: ${moveDist.toFixed(1)} > ${range}`);
-			setMoveError(`Too far — max ${range} units (${range * 10} ft)`);
-			setTimeout(() => setMoveError(null), 3000);
-			return;
-		}
-
-		console.log(`[click] sending tactical_move to (${gx},${gy})`);
-		sendMoveRef.current(gx, gy);
-		setSelectedId(null);
-		setMoveError(null);
-	}, []);
-
-	// ── Hover ────────────────────────────────────────────────────────────────
-	const onMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-		const canvas = canvasRef.current;
-		if (!canvas) return;
-		const rect = canvas.getBoundingClientRect();
-		const { ox, oy } = originRef.current;
-		const { gx, gy } = canvasToGrid(
-			e.clientX - rect.left,
-			e.clientY - rect.top,
-			ox,
-			oy,
-		);
-		setHovered({ gx, gy });
-	}, []);
-
-	// ── Pan ──────────────────────────────────────────────────────────────────
-	const panStart = useRef<{
-		mx: number;
-		my: number;
-		ox: number;
-		oy: number;
-	} | null>(null);
-
-	const onMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-		if (e.button !== 1 && e.button !== 2) return;
-		e.preventDefault();
-		panStart.current = { mx: e.clientX, my: e.clientY, ...originRef.current };
-	}, []);
-
-	const onMouseMoveForPan = useCallback(
-		(e: React.MouseEvent<HTMLCanvasElement>) => {
-			if (!panStart.current) return;
-			const dx = Math.round((e.clientX - panStart.current.mx) / CELL);
-			const dy = Math.round((e.clientY - panStart.current.my) / CELL);
-			originRef.current = {
-				ox: panStart.current.ox - dx,
-				oy: panStart.current.oy + dy,
-			};
-			redraw();
-		},
-		[redraw],
-	);
-
-	const onMouseUp = useCallback(() => {
-		panStart.current = null;
-	}, []);
-
-	// ── Hover info ──────────────────────────────────────────────────────────
-	const hoveredCombatant = hovered
-		? state.party.find(
-				(c) =>
-					(c.tactical_x ?? 0) === hovered.gx &&
-					(c.tactical_y ?? 0) === hovered.gy,
-			)
-		: null;
-
-	const hoveredTerrain = hovered
-		? terrainRef.current.get(cellKey(hovered.gx, hovered.gy))
-		: null;
-
-	return (
-		<div
-			className="tactical-board panel"
-			style={{
-				...(height !== undefined ? { height } : {}),
-				position: "relative",
-			}}
-		>
-			<div className="tactical-board-header">
-				<span className="tb-title">⚔ TACTICAL GRID</span>
-				<span className="tb-subtitle text-dim">
-					1 cell = 10 ft · North = up
-				</span>
-				{hoveredCombatant && (
-					<span className="tb-hover-info">
-						{hoveredCombatant.name} — HP {hoveredCombatant.vitals?.hp_current}/
-						{hoveredCombatant.vitals?.hp_max}
-					</span>
-				)}
-				{hovered &&
-					!hoveredCombatant &&
-					hoveredTerrain?.terrain_type === "impassable" && (
-						<span className="tb-hover-info" style={{ color: "#c0392b" }}>
-							Building
-							{hoveredTerrain.metadata?.name
-								? ` — ${String(hoveredTerrain.metadata.name)}`
-								: ""}{" "}
-							({hovered.gx}, {hovered.gy})
-						</span>
-					)}
-				{hovered && !hoveredCombatant && !!hoveredTerrain?.metadata?.road && (
-					<span className="tb-hover-info" style={{ color: "#d4a057" }}>
-						Road ({hovered.gx}, {hovered.gy})
-					</span>
-				)}
-				{hovered && !hoveredCombatant && !hoveredTerrain && (
-					<span className="tb-coords text-dim">
-						({hovered.gx}, {hovered.gy})
-					</span>
-				)}
-				{canMove && (
-					<div className="tb-actions">
-						{!selectedId ? (
-							<span className="tb-hint">Click your token to select</span>
-						) : (
-							<span className="tb-hint selected">
-								Click a cell to move · or click token again to deselect
-							</span>
-						)}
-						<button
-							className="btn end-turn-btn"
-							onClick={() => {
-								actions.endTurn();
-								setSelectedId(null);
-							}}
-						>
-							END TURN →
-						</button>
-					</div>
-				)}
-				{!canMove && activeId && (
-					<span className="tb-hint waiting">
-						Waiting for{" "}
-						{state.party.find((c) => c.id === activeId)?.name ?? "unknown"}…
-					</span>
-				)}
-			</div>
-
-			{moveError && <div className="tactical-error">{moveError}</div>}
-
-			<div className="tactical-board-canvas-wrap">
-				<canvas
-					ref={canvasRef}
-					width={W}
-					height={H}
-					className="tb-canvas"
-					style={{ cursor: selectedId ? "crosshair" : "default" }}
-					onClick={onClick}
-					onMouseMove={(e) => {
-						onMouseMove(e);
-						onMouseMoveForPan(e);
-					}}
-					onMouseDown={onMouseDown}
-					onMouseUp={onMouseUp}
-					onContextMenu={(e) => e.preventDefault()}
-				/>
-			</div>
-
-			<div className="tactical-debug">
-				me:{myId?.slice(-6) ?? "none"} · active:{activeId?.slice(-6) ?? "none"}{" "}
-				· {canMove ? "✓ my turn" : "✗ not my turn"} · terrain:
-				{terrainRef.current.size}
-			</div>
-
-			{inspectingEntity && (
-				<EnemyInspector
-					enemy={state.detectedEntities.find((e) => e.id === inspectingEntity)!}
-					onClose={() => setInspectingEntity(null)}
-				/>
-			)}
-		</div>
-	);
+	return { redraw };
 }

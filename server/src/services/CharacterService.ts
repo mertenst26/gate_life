@@ -6,8 +6,8 @@ import type {
 } from "@gate-life/shared";
 import { PARTY_MAX_SIZE } from "@gate-life/shared";
 import { v4 as uuid } from "uuid";
+import { rollCharacter } from "./CharacterCreationService.js";
 import { getTemplate } from "./ClassTemplateService.js";
-import { rollDogBoyCharacter } from "./DogBoyCreationService.js";
 import { gameState } from "./GameStateService.js";
 
 export class CharacterService {
@@ -17,18 +17,20 @@ export class CharacterService {
 		kind: CombatantKind;
 		controller?: string;
 		personalityPreset?: string;
+		classId?: string;
 	}): Combatant {
 		const party = gameState.getPartyCombatants(opts.campaignId);
 		if (party.length >= PARTY_MAX_SIZE) {
 			throw new Error(`Party is full (${PARTY_MAX_SIZE}/${PARTY_MAX_SIZE})`);
 		}
 
-		const template = getTemplate("dog_boy");
-		if (!template) throw new Error("Dog Boy template not found");
+		const classId = opts.classId || "dog_boy";
+		const template = getTemplate(classId);
+		if (!template) throw new Error(`Class template "${classId}" not found`);
 
-		const rolled = rollDogBoyCharacter(template);
+		const rolled = rollCharacter(classId);
 		console.log(
-			`[CharacterService] Dog Boy creation — ${rolled.creation_summary}`,
+			`[CharacterService] ${template.name} creation — ${rolled.creation_summary}`,
 		);
 
 		let personality: PersonalityProfile;

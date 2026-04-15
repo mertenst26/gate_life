@@ -1,0 +1,5 @@
+id: enemy
+label: Enemy
+icon: skull
+spawn_as: enemy
+hostile: true
