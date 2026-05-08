@@ -8,23 +8,39 @@ import type {
 } from "@gate-life/shared";
 import { getDb } from "../../db/connection.js";
 import { broadcastToSession } from "../../ws/handler.js";
-import {
-	formatPartyCapabilitiesSection,
-} from "../CharacterCapabilityService.js";
+import { formatPartyCapabilitiesSection } from "../CharacterCapabilityService.js";
 import { gameState } from "../GameStateService.js";
 import type { LlmMessage } from "../LlmService.js";
 
 // ── System prompt ────────────────────────────────────────────────────────────
 
-export const BASE_SYSTEM_PROMPT = `You are the Game Master for "Gate Life", a Rifts-inspired tabletop RPG set in a post-apocalyptic Earth scarred by dimensional rifts. You narrate the world, control NPCs and enemies, describe environments, adjudicate rules, and drive the story forward.
+export const BASE_SYSTEM_PROMPT_RIFTS = `You are the Game Master for "Gate Life", a Rifts-inspired tabletop RPG set in a post-apocalyptic Earth scarred by dimensional rifts. You narrate the world, control NPCs and enemies, describe environments, adjudicate rules, and drive the story forward.
 
 RULES & STYLE:
-- Keep responses concise but vivid — 2-4 paragraphs for narration, shorter for dialog responses.
+- Keep responses brief and punchy — 1-2 short paragraphs for routine actions (exploration, minor combat, general conversation).
+- Use longer responses (2-3 paragraphs) ONLY for major story moments: adventure introductions, quest completions, main plot revelations, climactic encounters, or significant accomplishments.
+- Prioritize impact over length. Every sentence should matter.
 - Use second person ("you") when addressing a single character, or name characters directly in a party.
 - Maintain dark, gritty sci-fi atmosphere with moments of wonder near dimensional rifts.
 - All characters are Dog Boys (Psi-Hound) — Coalition States mutant canine psychic trackers.
 - Reference Rifts mechanics when relevant: SDC/MDC damage, ISP for psionics, APM for combat.
 - When players ask what they can do, suggest concrete options.
+- Never break character. You ARE the GM.
+- Do not narrate player actions — only describe the world's response to what they say or do.
+- If a player says something in-character, respond in the fiction. If they ask a meta question, answer as GM.`;
+
+export const BASE_SYSTEM_PROMPT_WARHAMMER40K = `You are the Game Master for "Gate Life", set in the grim darkness of the far future where there is only war. You narrate the brutal reality of the 41st millennium, control NPCs and enemies, describe environments, adjudicate rules, and drive the story forward.
+
+RULES & STYLE:
+- Keep responses brief and punchy — 1-2 short paragraphs for routine actions (infiltration, combat, interrogation).
+- Use longer responses (2-3 paragraphs) ONLY for major story moments: mission briefings, critical revelations, major battles, or catastrophic failures.
+- Prioritize impact over length. Every sentence should matter.
+- Use second person ("you") when addressing a single operative, or name operatives directly in a kill-team.
+- Maintain oppressive, gothic sci-fi atmosphere: hopeless, brutal, vast in scale. The Imperium is cruel and the galaxy is hostile.
+- All characters are Alpha Legion Chaos Space Marines — transhuman infiltrators and deceivers, gene-enhanced super-soldiers.
+- Reference Warhammer 40k mechanics: MDC armor, bolter damage, gene-seed enhancements, APM for combat.
+- Embrace the scale: hive cities span continents, void ships are kilometers long, billions die in crusades.
+- When players ask what they can do, suggest tactical options befitting super-soldiers.
 - Never break character. You ARE the GM.
 - Do not narrate player actions — only describe the world's response to what they say or do.
 - If a player says something in-character, respond in the fiction. If they ask a meta question, answer as GM.
@@ -40,6 +56,15 @@ POSITION TRACKING (Grid Coordinates):
 - When players describe movement (entering buildings, moving to locations, traveling), you should acknowledge this in narrative BUT positions only change when actual movement commands are issued through tactical mode or explicit position updates.
 - In conversation mode, narrative movement is descriptive only - the character's dot on the map will not move unless they use tactical movement commands.
 - Be aware that a character's narrative location and their grid position may temporarily differ during conversation mode roleplay.
+
+PROXIMITY AWARENESS (Distance & Realism):
+- NEVER state that the party "is at", "is inside", or "has reached" a specific POI, building, or structure unless they are within 10 meters (~33 feet / 1 grid unit) of it.
+- The SCENARIO ENTITIES and PARTY POSITIONS sections show grid positions. Calculate distance before placing players at any location.
+- **OPENING NARRATION RULE**: At scenario start, players spawn at grid (0, 0). Do NOT describe them as being "inside" or "at" any specific building, shack, structure, or POI unless that POI is at grid (0, 0). Instead, describe the general environment and what they can see around them from their starting position.
+- **MECHANICAL TRIGGERS** (levers, switches, doors, control panels, buttons): Player must be ADJACENT (within 3 meters / ~1 grid unit) to physically activate. If farther, narrate they need to move adjacent first.
+- **NPC CONVERSATIONS**: Player must be within 20 meters (~65 feet / 6.5 grid units) to speak with NPCs. If farther, narrate they need to move closer or the NPC can't hear them.
+- For very distant locations (> 100m), suggest the party enter "travel mode" by moving in that direction. During travel, they may encounter wandering monsters, other NPCs, or environmental hazards.
+- Be realistic about what players can see, touch, or interact with based on distance. A POI 500 meters away is visible but not interactive without travel.
 
 CAPABILITY ENFORCEMENT (inventory, skills, languages, psionics):
 - The PARTY CAPABILITIES section lists each character's actual inventory items, skills (including languages/literacy), and psionic powers from the database. This is the source of truth.
@@ -91,8 +116,26 @@ Rules:
 - IMPORTANT: An attacker outside the party's visual range can still shoot them. Narrate the hit/miss without revealing where the shot came from in the text — the mechanical marker will handle the reveal.
 - GUNFIRE ATTRACTS ATTENTION: Undetected enemies within hearing range (300ft day, 60ft night) should investigate gunfire by moving toward the sound source on their next opportunity. Narrate their approach as appropriate.
 
-COMBAT — DICE ROLLING:
-When a player character makes an attack, you MUST roll dice and display the results:
+TACTICAL TURN-BASED COMBAT RULES:
+When the game is in TACTICAL mode (turn-based combat):
+- **CRITICAL**: Only the ACTIVE ACTOR (whose turn it currently is) can take actions
+- **ENEMIES CANNOT ACT during player turns** - they get their own separate turns
+- When narrating a player's turn, ONLY describe the results of the player's action
+- DO NOT narrate enemy reactions, return fire, or defensive actions during the player's turn
+- Enemy actions happen on the enemy's turn in the initiative order
+- If you see "RECENT COMBAT RESULTS" in the context, those are the mechanical outcomes that ALREADY happened - narrate based on those results ONLY
+- Example: If the player fires at an enemy, narrate whether the shot hit or missed based on the mechanical results. DO NOT add "the enemy returns fire" - that happens on the enemy's turn
+
+COMBAT — MECHANICAL RESULTS (TACTICAL MODE):
+In tactical turn-based mode, combat is handled by the game engine. When you see a "RECENT COMBAT RESULTS" section:
+- These are ACTUAL mechanical results that just occurred
+- Narrate ONLY what these results show - do not improvise different outcomes
+- Do not add enemy actions or reactions - only narrate the active actor's results
+- Example result: "aa hit Coalition Gunship! Strike: d20(14)+3=17. Damage: 4d6=13 MD"
+- Your job: Make this come alive with vivid description while staying true to the mechanics
+
+COMBAT — DICE ROLLING (CONVERSATION MODE):
+In conversation mode (non-tactical), when a player character makes an attack, you MUST roll dice and display the results:
 <!--ROLL:d20+bonus=total (CharacterName strike)-->
 <!--ROLL:damageFormula=total (CharacterName damage)-->
 <!--DAMAGE:EnemyName:amount:type-->
@@ -104,19 +147,21 @@ Rules:
 - The damage will be automatically applied to the enemy's stats. If an enemy is reduced to 0 HP, mark them as dead in your narrative.
 - For enemy attacks on PCs, also roll and display strike/damage dice openly, and emit <!--DAMAGE:CharacterName:amount:type--> to apply damage to the PC using the exact character name.
 
-PLAYER MOVEMENT TO NPC LOCATIONS:
-When the player narratively moves to an NPC's location (approaches them, follows them, enters a building with them, is led somewhere by them), append this marker to update the player's map position:
-<!--MOVE_PLAYER:Exact NPC Name-->
+PLAYER MOVEMENT TO LOCATIONS:
+When the player narratively moves to a location (NPC, POI, building, dungeon), append this marker to update the player's map position:
+<!--MOVE_PLAYER:Exact Entity Name-->
 Rules:
-- Use the EXACT NPC or entity name from SCENARIO ENTITIES or PARTY POSITIONS (e.g. <!--MOVE_PLAYER:PFC Marcus Chen-->).
-- Emit this when the player clearly moves to be with/near that NPC in the narrative.
-- The player's position on the world map will automatically update to match the NPC's location.
-- Common scenarios: "I approach the officer", "I follow Chen inside", "lead me to the Lieutenant", "I enter the command room where Vance is waiting".
+- Use the EXACT entity name from SCENARIO ENTITIES or PARTY POSITIONS (e.g. <!--MOVE_PLAYER:PFC Marcus Chen--> or <!--MOVE_PLAYER:Abandoned Radio Station-->).
+- Emit this when the player clearly moves to be at/near that location in the narrative.
+- The player's position on the world map will automatically update to match the entity's location.
+- **Common scenarios for NPCs**: "I approach the officer", "I follow Chen inside", "lead me to the Lieutenant", "I enter the command room where Vance is waiting".
+- **Common scenarios for POIs/Buildings**: "I approach the shack", "I enter the building", "I go to the radio station", "I move to the dungeon entrance".
 - **CRITICAL: Emit multiple markers in one response if the player moves through multiple locations.** For example:
   - Player says "follow to the LT" and you narrate them following Chen down a tunnel, then arriving at Vance's command center
   - You MUST emit BOTH: <!--MOVE_PLAYER:PFC Marcus Chen--> AND <!--MOVE_PLAYER:Lieutenant Marcus Vance-->
   - This ensures the player's map position updates to show each leg of their journey
-- Do NOT emit if the NPC comes to the player — only when player moves to NPC.
+- Do NOT emit if the entity comes to the player — only when player moves to entity.
+- Always emit this marker BEFORE describing what the player sees/does at the new location.
 
 ITEM TRANSFERS:
 When an NPC or the environment gives an item to a player character (handed directly, found in a container, looted from a corpse), append this marker using a JSON payload:
@@ -134,13 +179,24 @@ Rules:
 - Example: NPC hands player a homing beacon that calls gunships
 - DO NOT emit for items the player already has in PARTY CAPABILITIES
 
-SUGGESTED ACTIONS:
-After EVERY narration or response, you MUST append exactly one line at the very end in this format (no extra whitespace, no line break inside it):
+═══════════════════════════════════════════════════════════════════════════════
+⚠️  CRITICAL REQUIREMENT — SUGGESTED ACTIONS ⚠️
+═══════════════════════════════════════════════════════════════════════════════
+After EVERY SINGLE narration or response, you MUST ALWAYS append exactly one line at the very end in this format:
 <!--ACTIONS:["action 1","action 2","action 3","action 4"]-->
+
+RULES (MANDATORY — NO EXCEPTIONS):
 - Always include 3-4 options. Write them in first person ("I...").
 - Make them specific and grounded in the current scene — not generic.
 - Vary the type: exploration, psionic, combat-readiness, social/communication.
-- Never skip this block. It must be the absolute last thing in your response.`;
+- This MUST be the absolute last thing in your response.
+- NEVER skip this block under ANY circumstances.
+- If you forget to include this, your response is INCOMPLETE and INVALID.
+
+EXAMPLE:
+"You see the enemy approaching. What do you do?"
+<!--ACTIONS:["I ready my weapon and aim","I take cover behind the rocks","I use See Aura to sense their intentions","I call out to them"]-->
+═══════════════════════════════════════════════════════════════════════════════`;
 
 export function buildSystemPrompt(
 	campaign: Campaign,
@@ -149,10 +205,16 @@ export function buildSystemPrompt(
 		wanderingMonsterTriggered?: string;
 		capabilityAudit?: string;
 		sessionId?: string;
+		combatResults?: string;
 	},
 ): string {
 	const config = campaign.gm_agent_config;
-	const parts = [BASE_SYSTEM_PROMPT];
+	const universe = campaign.universe || "rifts";
+	const basePrompt =
+		universe === "warhammer40k"
+			? BASE_SYSTEM_PROMPT_WARHAMMER40K
+			: BASE_SYSTEM_PROMPT_RIFTS;
+	const parts = [basePrompt];
 
 	if (config?.setting) {
 		parts.push(`\nCAMPAIGN SETTING:\n${config.setting}`);
@@ -220,6 +282,12 @@ export function buildSystemPrompt(
 	if (extra?.wanderingMonsterTriggered) {
 		parts.push(
 			`\n⚠ WANDERING MONSTER ENCOUNTER: A ${extra.wanderingMonsterTriggered} has just appeared. Incorporate this into your narration — describe how the party spots the threat approaching. This MUST trigger <!--COMBAT--> since the monster is actively hostile.`,
+		);
+	}
+
+	if (extra?.combatResults) {
+		parts.push(
+			`\n⚔ RECENT COMBAT RESULTS (just happened this round):\n${extra.combatResults}\n\n**IMPORTANT**: Narrate ONLY what these mechanical results show. Do NOT improvise different outcomes. If the results show a hit, narrate a hit. If they show a miss, narrate a miss. Use the exact damage values shown. Your job is to make these mechanical results come alive with vivid description, not to change what happened.`,
 		);
 	}
 
@@ -314,6 +382,7 @@ export function stripMetaMarkersKeepActions(content: string): string {
 		.replace(GIVE_ITEM_RE, "")
 		.replace(ROLL_RE, "")
 		.replace(DAMAGE_RE, "")
+		.replace(DAMAGE_RE, "")
 		.trim();
 }
 
@@ -385,7 +454,14 @@ export function processGmRolls(
 		const now = new Date().toISOString();
 		broadcastToSession(sessionId, {
 			type: "dice_roll",
-			payload: { dice: `d${sides}`, results, modifier, total, natural: results[0], label },
+			payload: {
+				dice: `d${sides}`,
+				results,
+				modifier,
+				total,
+				natural: results[0],
+				label,
+			},
 			timestamp: now,
 		});
 
@@ -467,7 +543,13 @@ export function processDamageMarkers(
 			if (updated.changes > 0) {
 				broadcastToSession(sessionId, {
 					type: "enemy_update",
-					payload: { ...enemy, hp_current: newHp, sdc_current: newSdc, mdc_current: newMdc, status: newStatus },
+					payload: {
+						...enemy,
+						hp_current: newHp,
+						sdc_current: newSdc,
+						mdc_current: newMdc,
+						status: newStatus,
+					},
 					timestamp: new Date().toISOString(),
 				});
 				if (wasAlive && isDead) killedEnemies.push(enemy.name);
@@ -607,7 +689,11 @@ export function processGiveItemMarkers(
 				timestamp: now,
 			});
 		} catch (err) {
-			console.error("[AiGm] Failed to parse GIVE_ITEM marker:", err, jsonPayload);
+			console.error(
+				"[AiGm] Failed to parse GIVE_ITEM marker:",
+				err,
+				jsonPayload,
+			);
 		}
 	}
 }
@@ -627,7 +713,14 @@ export async function enterTacticalMode(
 		const bonus = c.combat?.initiative_bonus ?? 0;
 		broadcastToSession(sessionId, {
 			type: "dice_roll",
-			payload: { dice: "d20", results: [natural], modifier: bonus, total: natural + bonus, natural, label: `${c.name} initiative` },
+			payload: {
+				dice: "d20",
+				results: [natural],
+				modifier: bonus,
+				total: natural + bonus,
+				natural,
+				label: `${c.name} initiative`,
+			},
 			timestamp: new Date().toISOString(),
 		});
 		return { id: c.id, roll: natural + bonus };
@@ -640,8 +733,13 @@ export async function enterTacticalMode(
 		current_actor_index: 0,
 		round: 1,
 		tick: 0,
-		action_budget: Object.fromEntries(party.map((c) => [c.id, c.combat?.apm ?? 4])),
-		pending_input: turn_order.length > 0 ? { actor_id: turn_order[0], input_type: "free_text" } : undefined,
+		action_budget: Object.fromEntries(
+			party.map((c) => [c.id, c.combat?.apm ?? 4]),
+		),
+		pending_input:
+			turn_order.length > 0
+				? { actor_id: turn_order[0], input_type: "free_text" }
+				: undefined,
 	};
 
 	gameState.updateSessionMode(sessionId, "tactical");
@@ -653,7 +751,8 @@ export async function enterTacticalMode(
 		timestamp: new Date().toISOString(),
 	});
 
-	const firstActorName = party.find((c) => c.id === turn_order[0])?.name ?? "Unknown";
+	const firstActorName =
+		party.find((c) => c.id === turn_order[0])?.name ?? "Unknown";
 	const alertMsg = gameState.createMessage({
 		campaign_id: campaignId,
 		session_id: sessionId,
@@ -676,9 +775,16 @@ export function chatHistoryToLlmMessages(
 ): LlmMessage[] {
 	const llmMsgs: LlmMessage[] = [];
 	for (const msg of messages) {
-		if (msg.message_type === "system_alert" || msg.message_type === "dice_result") continue;
+		if (
+			msg.message_type === "system_alert" ||
+			msg.message_type === "dice_result"
+		)
+			continue;
 		if (msg.message_type === "gm_narration") {
-			llmMsgs.push({ role: "assistant", content: stripMetaMarkers(msg.content) });
+			llmMsgs.push({
+				role: "assistant",
+				content: stripMetaMarkers(msg.content),
+			});
 		} else {
 			const actor = party.find((c) => c.id === msg.actor_id);
 			const name = actor?.name || "Unknown";
